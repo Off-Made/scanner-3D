@@ -26,7 +26,7 @@ export function PinGate({ onReady }: { onReady: () => void }) {
           <Lock size={24} strokeWidth={1.6} aria-hidden />
         </div>
         <h1 className="title">Inserisci il PIN</h1>
-        <p className="subtitle">Lo trovi nel terminale dove hai avviato il server.</p>
+        <p className="subtitle">Serve per usare il server di ricostruzione. È il PIN stampato nel terminale del server (o impostato nei suoi segreti).</p>
         <input
           className="pin-input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*"
           maxLength={12} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))}

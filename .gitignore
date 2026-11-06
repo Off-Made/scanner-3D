@@ -41,3 +41,6 @@ web/e2e/screens/
 
 # Output dei test e2e
 web/e2e/out/
+
+# Cartella generata per lo Space
+dist-hf-space/

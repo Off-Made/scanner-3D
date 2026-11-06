@@ -59,10 +59,11 @@ def create_app(settings: Settings | None = None, providers: dict[str, Provider] 
         return await call_next(request)
 
     # Aggiunto DOPO il middleware di auth = più esterno: anche le risposte 401 hanno gli header CORS.
-    if settings.cors_origins:
+    if settings.cors_origins or settings.cors_origin_regex:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=settings.cors_origins,
+            allow_origin_regex=settings.cors_origin_regex,  # es. anteprime Vercel: https://scan3d-pwa-.*\.vercel\.app
             allow_credentials=False,  # niente cookie: il token viaggia nell'header
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type"],

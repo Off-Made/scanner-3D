@@ -21,6 +21,7 @@ import trimesh
 Progress = Callable[[str], None]
 DEFAULT_SIZE_MM = 100.0
 TARGET_FACES = 150_000
+MAX_POISSON_POINTS = 80_000
 
 
 @dataclass
@@ -100,8 +101,18 @@ def points_to_mesh(ply_path: str, progress: Progress | None = None, depth: int =
         pts_min_z = float(pts[:, 2].min())
 
     # --- superficie (Poisson) -------------------------------------------------
-    pcd.estimate_normals(o3d.geometry.KDTreeSearchParamKNN(30))
-    pcd.orient_normals_consistent_tangent_plane(20)
+    # Memoria: Poisson e l'orientamento delle normali crescono con il numero di punti. Oltre
+    # ~80k punti non si guadagna dettaglio (la solidificazione finale lavora a ~200 voxel),
+    # quindi riduco: è il passo che sul PC da 8 GB ha esaurito la RAM durante il collaudo.
+    if len(pcd.points) > MAX_POISSON_POINTS:
+        ext = float(np.linalg.norm(pcd.get_max_bound() - pcd.get_min_bound()))
+        voxel = ext / 600
+        while len(pcd.points) > MAX_POISSON_POINTS:
+            voxel *= 1.25
+            pcd = pcd.voxel_down_sample(voxel)
+        pts = np.asarray(pcd.points)
+    pcd.estimate_normals(o3d.geometry.KDTreeSearchParamKNN(24))
+    pcd.orient_normals_consistent_tangent_plane(12)
     centroid = pts.mean(axis=0)
     nrm = np.asarray(pcd.normals)
     if np.mean(np.einsum("ij,ij->i", nrm, pts - centroid)) < 0:  # normali verso l'esterno
@@ -118,6 +129,10 @@ def points_to_mesh(ply_path: str, progress: Progress | None = None, depth: int =
     far = tree.query(verts, k=1)[0] > max(spacing * 4, diag * 0.004)
     mesh_o3d.remove_vertices_by_mask(far)
     mesh = trimesh.Trimesh(np.asarray(mesh_o3d.vertices), np.asarray(mesh_o3d.triangles), process=True)
+    del mesh_o3d, dens, tree, verts, far, pcd  # libera la memoria di Open3D prima della solidificazione
+    import gc
+
+    gc.collect()
     lo, hi = pts.min(axis=0), pts.max(axis=0)
     margin = (hi - lo) * 0.03
     inside = np.all((mesh.vertices >= lo - margin) & (mesh.vertices <= hi + margin), axis=1)

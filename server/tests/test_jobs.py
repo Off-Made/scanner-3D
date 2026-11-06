@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 import time
 
 import numpy as np
@@ -109,3 +110,10 @@ def test_jobs_require_token(tmp_path):
     c = TestClient(create_app(s, providers={"mock": MockProvider(0.1)}))
     assert c.post("/api/jobs", json={"provider": "mock"}).status_code == 401
     assert c.get("/api/providers").status_code == 401
+
+
+def test_relative_data_dir_is_made_absolute(tmp_path, monkeypatch):
+    from app.jobs import JobManager
+    monkeypatch.chdir(tmp_path)
+    jm = JobManager(Path("rel-data"), {"mock": MockProvider(0.1)})
+    assert jm.dir.is_absolute() and jm.dir == (tmp_path / "rel-data" / "jobs").resolve()

@@ -39,7 +39,8 @@ class RunContext:
             raise JobCancelled()
         self.report_progress(max(0.0, min(100.0, pct)), step)
 
-    def run(self, cmd: list, band: tuple[float, float], step: str, expected_s: float, cwd: Path | None = None) -> None:
+    def run(self, cmd: list, band: tuple[float, float], step: str, expected_s: float, cwd: Path | None = None,
+            env: dict | None = None) -> None:
         """Esegue un programma esterno a priorità bassa, aggiornando l'avanzamento nella banda
         [band[0], band[1]] in base al tempo atteso, e lo termina se il job viene annullato."""
         self.progress(band[0], step)
@@ -54,7 +55,7 @@ class RunContext:
                 log.write(f"\n===== {step}: {' '.join(map(str, cmd))}\n")
                 log.flush()
             self._proc = subprocess.Popen([str(c) for c in cmd], cwd=cwd or self.work_dir,
-                                          stdout=log, stderr=subprocess.STDOUT, **kwargs)
+                                          stdout=log, stderr=subprocess.STDOUT, env=env, **kwargs)
             t0 = time.monotonic()
             while self._proc.poll() is None:
                 if self.is_cancelled():

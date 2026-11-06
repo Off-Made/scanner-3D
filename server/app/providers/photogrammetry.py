@@ -102,11 +102,13 @@ class PhotogrammetryProvider(Provider):
         ctx.run([colmap, "image_undistorter", "--image_path", images, "--input_path", model,
                  "--output_path", dense, "--output_type", "COLMAP"],
                 band=(44, 46), step="Preparazione delle immagini", expected_s=3)
+        # su Linux i binari di OpenMVS usano librerie incluse nella stessa cartella
+        omvs_env = None if IS_WIN else {**os.environ, "LD_LIBRARY_PATH": f"{openmvs_dir()}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
         ctx.run([omvs("InterfaceCOLMAP"), "-i", dense, "-o", w / "scene.mvs", "--image-folder", dense / "images", "-w", w],
-                band=(46, 47), step="Preparazione della ricostruzione densa", expected_s=2)
+                band=(46, 47), step="Preparazione della ricostruzione densa", expected_s=2, env=omvs_env)
         ctx.run([omvs("DensifyPointCloud"), w / "scene.mvs", "--resolution-level", str(self.res_level),
                  "--process-priority", "-1", "--max-threads", "0", "-w", w],
-                band=(47, 85), step="Ricostruzione della superficie (la parte più lunga)", expected_s=8 * n)
+                band=(47, 85), step="Ricostruzione della superficie (la parte più lunga)", expected_s=8 * n, env=omvs_env)
         ply = w / "scene_dense.ply"
         if not ply.exists():
             raise ProviderError("La ricostruzione densa non ha prodotto punti. Riprova con più luce e foto più nitide.")

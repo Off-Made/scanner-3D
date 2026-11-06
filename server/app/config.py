@@ -33,6 +33,7 @@ class Settings:
     session_secret: bytes
     token_ttl_hours: float = 12
     cors_origins: list[str] = field(default_factory=list)
+    cors_origin_regex: str | None = None
     trusted_proxies: list = field(default_factory=list)
     trusted_ip_headers: list[str] = field(default_factory=lambda: ["CF-Connecting-IP", "X-Forwarded-For"])
     pin_max_attempts: int = 5
@@ -54,6 +55,7 @@ class Settings:
             session_secret=secret,
             token_ttl_hours=float(os.getenv("TOKEN_TTL_HOURS", "12") or 12),
             cors_origins=_csv(os.getenv("CORS_ORIGINS")),
+            cors_origin_regex=os.getenv("CORS_ORIGIN_REGEX") or None,
             trusted_proxies=_networks(_csv(os.getenv("TRUSTED_PROXIES"))),
             trusted_ip_headers=_csv(os.getenv("TRUSTED_IP_HEADERS")) or ["CF-Connecting-IP", "X-Forwarded-For"],
             pin_generated=generated,

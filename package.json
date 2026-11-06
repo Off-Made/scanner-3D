@@ -8,6 +8,9 @@
     "dev": "node scripts/dev.mjs",
     "test": "npm --prefix web run test && node scripts/pytest.mjs",
     "check:tools": "node scripts/check-tools.mjs",
-    "hooks": "node scripts/install-hooks.mjs"
+    "hooks": "node scripts/install-hooks.mjs",
+    "serve": "node scripts/serve.mjs",
+    "e2e": "npm --prefix web run e2e",
+    "hf-space": "node scripts/prepare-hf-space.mjs"
   }
 }

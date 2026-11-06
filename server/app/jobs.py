@@ -44,7 +44,8 @@ class Job:
 
 class JobManager:
     def __init__(self, data_dir: Path, providers: dict[str, Provider], ttl_hours: float = 48):
-        self.dir = data_dir / "jobs"
+        # percorso assoluto: i programmi esterni girano con una cartella di lavoro diversa
+        self.dir = Path(data_dir).resolve() / "jobs"
         self.dir.mkdir(parents=True, exist_ok=True)
         self.providers = providers
         self.ttl = ttl_hours * 3600
@@ -72,7 +73,16 @@ class JobManager:
         p = self.job_dir(job.id) / "job.json"
         tmp = p.with_suffix(".tmp")
         tmp.write_text(json.dumps(asdict(job)), encoding="utf-8")
-        tmp.replace(p)
+        # Su Windows la sostituzione fallisce se un altro processo (tipicamente l'antivirus che
+        # scansiona il file appena scritto) lo tiene aperto per un istante: riprovo.
+        for attempt in range(20):
+            try:
+                tmp.replace(p)
+                return
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.05)
 
     def _load(self) -> None:
         now = time.time()
