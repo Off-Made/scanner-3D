@@ -38,3 +38,6 @@ web/e2e/screens/
 
 # Artefatti di build TypeScript
 *.tsbuildinfo
+
+# Output dei test e2e
+web/e2e/out/

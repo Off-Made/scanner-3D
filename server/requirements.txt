@@ -18,3 +18,4 @@ shapely>=2.0
 rtree>=1.2
 networkx>=3
 mapbox_earcut>=1.0
+lxml>=5

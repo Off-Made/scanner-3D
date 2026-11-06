@@ -11,14 +11,21 @@
     "e2e": "node e2e/smoke.mjs"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.2",
+    "dexie": "^4.4.7",
+    "fflate": "^0.8.3",
     "lucide-react": "^1.69.0",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.187.0",
     "@vitejs/plugin-react": "^6.2.1",
+    "fake-indexeddb": "^6.2.7",
     "playwright-core": "^1.64.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.6",

@@ -33,6 +33,19 @@ export function onUnauthorized(fn: Listener): () => void {
   return () => { unauthorizedListeners.delete(fn) }
 }
 
+export async function apiBlob(path: string): Promise<Blob> {
+  const s = loadSession()
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${path}`, { headers: s ? { Authorization: `Bearer ${s.token}` } : {} })
+  } catch {
+    throw new ApiError(0, 'Server non raggiungibile.')
+  }
+  if (res.status === 401) { clearSession(); unauthorizedListeners.forEach(f => f()) }
+  if (!res.ok) throw new ApiError(res.status, `Errore ${res.status}`)
+  return res.blob()
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const s = loadSession()
