@@ -38,6 +38,9 @@ class Settings:
     pin_max_attempts: int = 5
     pin_window_seconds: int = 60
     pin_generated: bool = False
+    data_dir: Path = ROOT / "server" / "data"
+    job_ttl_hours: float = 48
+    serve_web: Path | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -54,4 +57,7 @@ class Settings:
             trusted_proxies=_networks(_csv(os.getenv("TRUSTED_PROXIES"))),
             trusted_ip_headers=_csv(os.getenv("TRUSTED_IP_HEADERS")) or ["CF-Connecting-IP", "X-Forwarded-For"],
             pin_generated=generated,
+            data_dir=Path(os.getenv("DATA_DIR") or ROOT / "server" / "data"),
+            job_ttl_hours=float(os.getenv("JOB_TTL_HOURS", "48") or 48),
+            serve_web=Path(os.environ["SERVE_WEB"]) if os.getenv("SERVE_WEB") else None,
         )
