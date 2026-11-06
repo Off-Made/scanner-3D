@@ -1,0 +1,40 @@
+# Dipendenze e build
+node_modules/
+dist/
+.cache/
+server/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Binari scaricati (COLMAP, OpenMVS, cloudflared)
+tools/
+
+# Dati e risultati
+data/
+server/data/
+bench/dataset/
+bench/out/
+*.ply
+*.mvs
+*.glb
+*.stl
+*.3mf
+
+# Segreti
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Varie
+*.log
+.DS_Store
+Thumbs.db
+
+# Screenshot dei test e2e
+web/e2e/screens/
+
+# Artefatti di build TypeScript
+*.tsbuildinfo

@@ -1,0 +1,4 @@
+# Fine riga LF nel repository (il Codespace è Linux)
+* text=auto eol=lf
+*.png binary
+*.jpg binary

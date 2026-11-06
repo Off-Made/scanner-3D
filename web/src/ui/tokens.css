@@ -1,0 +1,150 @@
+/* Scan3D — solo scala di grigi. Tutti i colori passano da questi token. */
+:root {
+  --bg: #f5f5f4;
+  --surface: #ffffff;
+  --surface-2: #ececeb;
+  --border: #dcdcda;
+  --text: #1c1c1c;
+  --text-2: #5f5f5d;
+  --text-3: #8d8d8a;
+  --accent: #2a2a2a;          /* pulsante primario: grafite */
+  --accent-text: #fafafa;
+  --focus: #7a7a78;
+  --danger-bg: #ebe9e7;       /* errori: nessun rosso, solo contrasto e icona */
+
+  --radius-s: 10px;
+  --radius-m: 16px;
+  --radius-l: 24px;
+  --space: 8px;
+  --tap: 52px;                /* altezza minima dei controlli (pollice) */
+  --nav-h: 64px;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.04);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121212; --surface: #1c1c1c; --surface-2: #262626; --border: #333332;
+    --text: #ededec; --text-2: #a6a6a3; --text-3: #737370;
+    --accent: #e6e6e4; --accent-text: #161616; --focus: #9a9a97; --danger-bg: #2a2827;
+    --shadow: none; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121212; --surface: #1c1c1c; --surface-2: #262626; --border: #333332;
+  --text: #ededec; --text-2: #a6a6a3; --text-3: #737370;
+  --accent: #e6e6e4; --accent-text: #161616; --focus: #9a9a97; --danger-bg: #2a2827;
+  --shadow: none; color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-size: 17px;            /* >=16px: Safari non fa zoom sui campi di input */
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---- layout ---- */
+.app {
+  min-height: 100dvh;
+  padding: calc(var(--safe-top) + 12px) calc(var(--safe-right) + 20px)
+           calc(var(--nav-h) + var(--safe-bottom) + 20px) calc(var(--safe-left) + 20px);
+  max-width: 560px;
+  margin: 0 auto;
+}
+.screen { animation: fade-in 240ms var(--ease); display: flex; flex-direction: column; gap: calc(var(--space) * 2); }
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.title { font-size: 28px; font-weight: 650; letter-spacing: -0.02em; margin: 12px 0 0; }
+.subtitle { color: var(--text-2); margin: 0; }
+.muted { color: var(--text-3); font-size: 15px; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m);
+  padding: 16px; box-shadow: var(--shadow);
+}
+.notice {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--danger-bg); border-radius: var(--radius-m); padding: 14px 16px; font-size: 15px;
+}
+.notice svg { flex: none; margin-top: 2px; }
+
+/* ---- pulsanti ---- */
+.btn {
+  min-height: var(--tap); width: 100%; border-radius: var(--radius-m); border: 1px solid var(--border);
+  background: var(--surface); display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  font-weight: 560; padding: 0 20px; cursor: pointer; touch-action: manipulation;
+  transition: transform 120ms var(--ease), opacity 120ms var(--ease);
+}
+.btn:active { transform: scale(0.98); }
+.btn[disabled] { opacity: 0.45; cursor: default; }
+.btn-primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
+.btn-big { min-height: 72px; font-size: 19px; border-radius: var(--radius-l); }
+
+.tile {
+  display: flex; align-items: center; gap: 16px; text-align: left; width: 100%;
+  min-height: 76px; padding: 16px 18px; border-radius: var(--radius-l);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); cursor: pointer;
+}
+.tile .tile-icon {
+  width: 44px; height: 44px; border-radius: 12px; background: var(--surface-2);
+  display: grid; place-items: center; flex: none;
+}
+.tile strong { display: block; font-weight: 600; }
+.tile span { color: var(--text-2); font-size: 15px; }
+
+/* ---- campo PIN ---- */
+.pin-input {
+  width: 100%; min-height: 64px; text-align: center; font-size: 28px; letter-spacing: 0.4em;
+  border-radius: var(--radius-m); border: 1px solid var(--border); background: var(--surface);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- navigazione in basso ---- */
+.bottom-nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  height: calc(var(--nav-h) + var(--safe-bottom)); padding-bottom: var(--safe-bottom);
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(1.2) blur(16px); -webkit-backdrop-filter: saturate(1.2) blur(16px);
+  border-top: 1px solid var(--border);
+}
+.bottom-nav button {
+  background: none; border: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; font-size: 12px; color: var(--text-3); cursor: pointer;
+}
+.bottom-nav button[aria-current="page"] { color: var(--text); font-weight: 600; }
+
+/* ---- fotocamera ---- */
+.viewfinder {
+  position: relative; width: 100%; aspect-ratio: 3 / 4; border-radius: var(--radius-l); overflow: hidden;
+  background: #0e0e0e;
+}
+.viewfinder video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 15px; margin: 0; }
+.kv dt { color: var(--text-2); }
+.kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.thumbs { display: flex; gap: 8px; overflow-x: auto; }
+.thumbs img { width: 72px; height: 96px; object-fit: cover; border-radius: var(--radius-s); flex: none; }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; }
