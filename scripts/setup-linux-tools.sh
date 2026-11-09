@@ -8,7 +8,7 @@ OPENMVS_VERSION="v2.4.0"
 echo "== Dipendenze di sistema (COLMAP da apt, librerie per Open3D) =="
 sudo apt-get update -y
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  colmap unzip curl ca-certificates libgl1 libglib2.0-0 libgomp1
+  colmap unzip curl ca-certificates libgl1 libglib2.0-0 libgomp1 libusb-1.0-0
 
 echo "== OpenMVS ${OPENMVS_VERSION} (binari precompilati Ubuntu) =="
 mkdir -p "$ROOT/tools/openmvs" "$ROOT/tools/_downloads"

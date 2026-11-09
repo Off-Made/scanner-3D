@@ -5,7 +5,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-venv python3-pip colmap curl unzip ca-certificates libgl1 libglib2.0-0 libgomp1 \
+      python3 python3-venv python3-pip colmap curl unzip ca-certificates libgl1 libglib2.0-0 libgomp1 libusb-1.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # OpenMVS: binari precompilati ufficiali per Ubuntu
