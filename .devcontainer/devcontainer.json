@@ -8,7 +8,8 @@
     "ghcr.io/devcontainers/features/node:1": { "version": "24" }
   },
   "hostRequirements": { "cpus": 2, "memory": "8gb" },
-  "postCreateCommand": "bash scripts/setup-linux-tools.sh && npm run setup && npm run hooks",
+  // `;` e non `&&`: se COLMAP/OpenMVS falliscono, l'app (setup) va installata comunque.
+  "postCreateCommand": "bash scripts/setup-linux-tools.sh; npm run setup && npm run hooks",
   "forwardPorts": [8000, 5173],
   "portsAttributes": {
     "8000": { "label": "Scan3D (app + API)", "onAutoForward": "notify" },
