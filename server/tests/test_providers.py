@@ -86,3 +86,21 @@ def test_hf_provider_translates_quota_errors(tmp_path):
     prov = HuggingFaceProvider(client_factory=lambda *a: Boom(tmp_path))
     with pytest.raises(ProviderError, match="Quota"):
         prov.reconstruct([p], ctx(tmp_path))
+
+
+def test_hf_client_kwargs_match_real_gradio_signature(monkeypatch):
+    """Il client finto non controlla i nomi dei parametri: verifichiamo quelli veri (senza rete)."""
+    import inspect
+
+    import gradio_client
+
+    seen = {}
+
+    def fake_init(self, *args, **kwargs):
+        inspect.signature(real_init).bind(self, *args, **kwargs)  # TypeError se un nome non esiste
+        seen.update(kwargs)
+
+    real_init = gradio_client.Client.__init__
+    monkeypatch.setattr(gradio_client.Client, "__init__", fake_init)
+    HuggingFaceProvider()._client()
+    assert "token" in seen

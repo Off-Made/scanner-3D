@@ -89,7 +89,8 @@ class HuggingFaceProvider(Provider):
         if self._client_factory:
             return self._client_factory(self.space, self.token)
         from gradio_client import Client
-        return Client(self.space, hf_token=self.token, verbose=False)
+        # `token` (gradio_client >= 1.0): il vecchio `hf_token` è stato rimosso nella 2.x.
+        return Client(self.space, token=self.token, verbose=False)
 
     def reconstruct(self, photos: list[Path], ctx: RunContext):
         from gradio_client import handle_file
