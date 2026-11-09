@@ -1,0 +1,22 @@
+{
+  // Codespace di GitHub: gira sui server di GitHub, non serve Docker sul tuo PC.
+  // Primo avvio: ~10-15 minuti (installa COLMAP, OpenMVS e le dipendenze).
+  "name": "Scan3D",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" },
+    "ghcr.io/devcontainers/features/node:1": { "version": "24" }
+  },
+  "hostRequirements": { "cpus": 2, "memory": "8gb" },
+  // `;` e non `&&`: se COLMAP/OpenMVS falliscono, l'app (setup) va installata comunque.
+  "postCreateCommand": "bash scripts/setup-linux-tools.sh; npm run setup && npm run hooks",
+  "forwardPorts": [8000, 5173],
+  "portsAttributes": {
+    "8000": { "label": "Scan3D (app + API)", "onAutoForward": "notify" },
+    "5173": { "label": "Vite (sviluppo)", "onAutoForward": "silent" }
+  },
+  "customizations": {
+    "codespaces": { "openFiles": ["README.md"] },
+    "vscode": { "extensions": ["ms-python.python"] }
+  }
+}
