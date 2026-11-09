@@ -25,6 +25,17 @@ Stato di avanzamento, decisioni e come riprendere il lavoro.
 - [x] README con guida GitHub → Codespace → Vercel → collaudo telefono
 
 ## Da fare
+- [ ] **Ripartire da qui (dopo il riavvio del PC):** collaudo reale con fotogrammetria, un passo alla volta,
+      solo se `psutil.virtual_memory().available` ≥ 2 GB prima di ogni passo:
+      1. avviare il server: `SCAN3D_ENABLE_MOCK=1 ACCESS_PIN=<pin> DATA_DIR=.cache/e2e-data SERVE_WEB=web/dist`
+         `server/.venv/Scripts/python -m uvicorn app.main:app --app-dir server --port 8000`
+      2. ricostruzione via API senza browser (tempio, 40 foto) → misurare tempo e RAM della pulizia
+         (ridotta a max 80k punti prima di Poisson, non ancora riprovata)
+      3. `PROVIDER=photo IMAGES=../bench/dataset/_templeRing/templeRing npm run e2e` (in `web/`)
+      4. `scripts/verify_exports.py web/e2e/out` e `npm run smoke`
+      5. compilare "Risultati del collaudo" qui sotto e fare il commit
+- [ ] Motore AI reale: NON provare dal PC aziendale (il proxy ispeziona l'HTTPS, Python rifiuta il
+      certificato aziendale; l'utente ha scelto di non installare `truststore`). Va provato nel Codespace.
 - [ ] (Utente) Verifica policy aziendale → push su GitHub → Codespace → Vercel → collaudo su iPhone 13 / SE
 - [ ] (Utente) Collaudo su Android/Samsung (punti elencati nel README)
 - [ ] (Futuro) Invio a OctoPrint/Moonraker con slicing lato server; import da Scaniverse
