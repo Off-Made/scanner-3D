@@ -29,7 +29,8 @@ if health; then say "Il server è già acceso sulla porta $PORT"; else
   fi
 
   # --- auto-riparazione: dipendenze Python e strumenti di fotogrammetria ------------------------
-  [ -x server/.venv/bin/python ] || { say "Virtualenv mancante: npm run setup"; npm run setup; }
+  # virtualenv mancante o rotto (es. il Python del Codespace è cambiato dopo un rebuild): setup lo ricrea
+  server/.venv/bin/python -c "import pip" >/dev/null 2>&1 || { say "Virtualenv mancante o rotto: npm run setup"; npm run setup; }
   if ! server/.venv/bin/python scripts/doctor.py >/dev/null 2>&1; then
     say "Mancano componenti: rilancio l'installazione (qualche minuto, log in .cache/setup-tools.log)"
     bash scripts/setup-linux-tools.sh >/dev/null 2>&1 || say "Installazione con errori: guarda .cache/setup-tools.log"
