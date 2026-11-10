@@ -8,11 +8,14 @@
     "ghcr.io/devcontainers/features/node:1": { "version": "24" }
   },
   "hostRequirements": { "cpus": 2, "memory": "8gb" },
-  // `;` e non `&&`: se COLMAP/OpenMVS falliscono, l'app (setup) va installata comunque.
-  "postCreateCommand": "bash scripts/setup-linux-tools.sh; npm run setup && npm run hooks",
-  // A ogni accensione: avvia da solo app + API e rende pubblica la porta 8000 (log in .cache/).
+  // `;` e `exit 0`: se un passo fallisce, Codespaces SALTEREBBE i comandi successivi (incluso l'avvio
+  // automatico). Gli errori restano nei log; codespace-start.sh ripara da solo ciò che manca.
+  "postCreateCommand": "mkdir -p .cache; (bash scripts/setup-linux-tools.sh; npm run setup; npm run hooks) 2>&1 | tee -a .cache/postcreate.log; exit 0",
+  // A ogni accensione e a ogni apertura: avvia app + API e rende pubblica la porta 8000 (log in .cache/).
+  // Lo script è sicuro da lanciare più volte (lock + controllo /api/health): niente doppioni.
   // In background, così il Codespace è subito usabile mentre il server si prepara.
   "postStartCommand": "mkdir -p .cache && setsid nohup bash scripts/codespace-start.sh >> .cache/codespace-start.log 2>&1 < /dev/null &",
+  "postAttachCommand": "mkdir -p .cache && setsid nohup bash scripts/codespace-start.sh >> .cache/codespace-start.log 2>&1 < /dev/null &",
   "forwardPorts": [8000, 5173],
   "portsAttributes": {
     "8000": { "label": "Scan3D (app + API)", "onAutoForward": "notify" },
