@@ -130,3 +130,13 @@ def test_photogrammetry_reports_missing_openmvs_libraries(monkeypatch, tmp_path)
     monkeypatch.setattr(ph, "missing_shared_libs", lambda b, d: ("libboost_iostreams.so.1.83.0",))
     ok, why = ph.PhotogrammetryProvider().available()
     assert not ok and "libboost_iostreams" in why and "setup-linux-tools.sh" in why
+
+
+def test_failed_step_message_includes_log_tail(tmp_path):
+    import sys
+    c = RunContext(work_dir=tmp_path, report_progress=lambda p, s: None, is_cancelled=lambda: False,
+                   log_file=tmp_path / "pipeline.log")
+    with pytest.raises(ProviderError) as e:
+        c.run([sys.executable, "-c", "print('ERRORE: immagini non valide'); raise SystemExit(2)"],
+              band=(0, 10), step="Prova", expected_s=1)
+    assert "codice 2" in str(e.value) and "immagini non valide" in str(e.value)

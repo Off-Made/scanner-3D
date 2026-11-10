@@ -49,6 +49,10 @@ class RunContext:
             kwargs["creationflags"] = subprocess.BELOW_NORMAL_PRIORITY_CLASS | subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs["preexec_fn"] = lambda: os.nice(5)
+        if sys.platform != "win32":
+            # COLMAP di Ubuntu è compilato con Qt: senza uno schermo (Codespace, server) Qt può
+            # interrompere il programma con SIGABRT (codice -6). "offscreen" = niente schermo richiesto.
+            env = {**(env if env is not None else os.environ), "QT_QPA_PLATFORM": "offscreen"}
         log = open(self.log_file, "a", encoding="utf-8", errors="replace") if self.log_file else subprocess.DEVNULL
         try:
             if self.log_file:
@@ -66,12 +70,25 @@ class RunContext:
                 self.report_progress(band[0] + (band[1] - band[0]) * 0.95 * frac, step)
                 time.sleep(0.5)
             if self._proc.returncode != 0:
-                raise ProviderError(f"Il passo “{step}” è fallito (codice {self._proc.returncode}).")
+                rc = self._proc.returncode
+                why = {-6: " — il programma si è interrotto da solo (SIGABRT)",
+                       -9: " — terminato dal sistema, probabilmente memoria esaurita (prova con meno foto)"}.get(rc, "")
+                tail = self._log_tail()
+                raise ProviderError(f"Il passo “{step}” è fallito (codice {rc}{why})." + (f" Ultime righe: {tail}" if tail else ""))
         finally:
             self._proc = None
             if self.log_file:
                 log.close()
         self.progress(band[1], step)
+
+    def _log_tail(self, lines: int = 3, limit: int = 300) -> str:
+        """Ultime righe non vuote del log del programma: di solito contengono il motivo dell'errore."""
+        try:
+            text = Path(self.log_file).read_text(encoding="utf-8", errors="replace") if self.log_file else ""
+        except OSError:
+            return ""
+        last = [l.strip() for l in text.splitlines() if l.strip() and not l.startswith("=====")][-lines:]
+        return " | ".join(last)[-limit:]
 
     def _kill(self):
         p = self._proc
