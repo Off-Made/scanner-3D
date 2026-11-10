@@ -1,20 +1,22 @@
 import { useState, type FormEvent } from 'react'
 import { Lock } from 'lucide-react'
-import { ApiError, login } from '../api/client'
+import { ApiError, BACKEND_START_URL, login } from '../api/client'
 
 export function PinGate({ onReady }: { onReady: () => void }) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [offline, setOffline] = useState(false)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    setBusy(true); setError(null)
+    setBusy(true); setError(null); setOffline(false)
     try {
       await login(pin)
       onReady()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Errore imprevisto.')
+      setOffline(err instanceof ApiError && err.status === 0)
       setPin('')
     } finally { setBusy(false) }
   }
@@ -33,6 +35,7 @@ export function PinGate({ onReady }: { onReady: () => void }) {
           aria-label="PIN di accesso" autoFocus
         />
         {error && <div className="notice" role="alert">{error}</div>}
+        {offline && BACKEND_START_URL && <a className="btn" href={BACKEND_START_URL} target="_blank" rel="noopener noreferrer">Accendi il server</a>}
         <button className="btn btn-primary btn-big" disabled={busy || pin.length < 4}>
           {busy ? 'Verifica…' : 'Entra'}
         </button>

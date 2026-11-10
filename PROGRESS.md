@@ -40,9 +40,15 @@ Stato di avanzamento, decisioni e come riprendere il lavoro.
 - [ ] (Utente) Collaudo su Android/Samsung (punti elencati nel README)
 - [ ] (Futuro) Invio a OctoPrint/Moonraker con slicing lato server; import da Scaniverse
 
+- [x] 2026-11-10 — Codespace: avvio automatico (`postStartCommand` → `scripts/codespace-start.sh`, secrets
+      Codespaces, porta pubblica via `gh`), `npm run doctor`, setup Linux idempotente con log, errori
+      ImportError leggibili, motori "non disponibili" con motivo visibile anche sul telefono
+- [ ] (Utente) Nel Codespace: impostare i secrets, rebuild, `npm run doctor` verde, collaudo Precisa + Rapida
+
 ## Decisioni
 | Data | Decisione |
 |---|---|
+| 2026-11-10 | HF Space Docker ora a pagamento (PRO): backend resta nel Codespace, con avvio automatico |
 | 2026-11-06 | Fotogrammetria: 1600 px, exhaustive, 4 thread, priorità BelowNormal, max 40 foto |
 | 2026-11-06 | Nessun tunnel (bloccato dalla rete + policy). Test da telefono via Codespace/Vercel |
 | 2026-11-06 | Auth: PIN → token HMAC in `Authorization: Bearer`, niente cookie |

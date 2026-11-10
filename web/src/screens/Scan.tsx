@@ -189,7 +189,10 @@ export function ScanScreen({ go }: { go: (hash: string) => void }) {
     <section className="screen">
       <Header title="Nuova scansione" back={() => go('/')} />
       {options.length > 1 && <Segmented label="Motore di ricostruzione" value={provider} onChange={setProvider} options={options} />}
-      {current && <p className="muted" style={{ margin: 0 }}>{current.available ? current.description : current.reason}</p>}
+      {current && (current.available
+        ? <p className="muted" style={{ margin: 0 }}>{current.description}</p>
+        : <div className="notice" role="alert"><AlertCircle size={20} strokeWidth={1.6} />
+            <div><strong>{current.label}: non disponibile ora</strong><div>{current.reason || 'Il server non può usare questo motore.'}</div></div></div>)}
 
       <div className="scan-stage">
         <div className="viewfinder">

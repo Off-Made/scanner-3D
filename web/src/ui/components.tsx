@@ -40,7 +40,9 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
   return (
     <div className="segmented" role="radiogroup" aria-label={label}>
       {options.map(o => (
-        <button key={o.value} role="radio" aria-checked={value === o.value} disabled={o.disabled}
+        // Niente `disabled` nativo: su telefono il tocco verrebbe ignorato e il motivo (title) non si vede.
+        // L'opzione resta selezionabile, attenuata, e lo schermo chiamante mostra perché non è disponibile.
+        <button key={o.value} role="radio" aria-checked={value === o.value} aria-disabled={o.disabled || undefined}
                 title={o.hint} onClick={() => onChange(o.value)}>{o.label}</button>
       ))}
     </div>

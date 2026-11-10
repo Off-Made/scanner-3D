@@ -23,6 +23,15 @@ class FailingProvider(Provider):
         raise ProviderError("Messaggio chiaro per l'utente.")
 
 
+class MissingLibProvider(Provider):
+    """Simula Open3D installato ma senza la sua libreria di sistema (il caso del Codespace)."""
+    id = "missing"
+    label = "Manca libreria"
+
+    def reconstruct(self, photos, ctx):
+        raise ImportError("libusb-1.0.so.0: cannot open shared object file: No such file or directory")
+
+
 def jpeg(w=800, h=600, seed=0) -> bytes:
     rng = np.random.default_rng(seed)
     buf = io.BytesIO()
@@ -33,7 +42,8 @@ def jpeg(w=800, h=600, seed=0) -> bytes:
 @pytest.fixture
 def client(tmp_path):
     s = Settings(access_pin="123456", session_secret=b"x", data_dir=tmp_path)
-    app = create_app(s, providers={"mock": MockProvider(seconds=0.2), "fail": FailingProvider()})
+    app = create_app(s, providers={"mock": MockProvider(seconds=0.2), "fail": FailingProvider(),
+                                          "missing": MissingLibProvider()})
     c = TestClient(app)
     tok = c.post("/api/auth", json={"pin": "123456"}).json()["token"]
     c.headers.update({"Authorization": f"Bearer {tok}"})
@@ -77,6 +87,15 @@ def test_provider_error_is_reported_to_user(client):
     client.post(f"/api/jobs/{job['id']}/start")
     done = wait_done(client, job["id"])
     assert done["status"] == "error" and done["error"] == "Messaggio chiaro per l'utente."
+
+
+def test_missing_system_library_is_named_in_the_error(client):
+    job = client.post("/api/jobs", json={"provider": "missing"}).json()
+    client.post(f"/api/jobs/{job['id']}/photos", files={"photo": ("a.jpg", jpeg(), "image/jpeg")})
+    client.post(f"/api/jobs/{job['id']}/start")
+    done = wait_done(client, job["id"])
+    assert done["status"] == "error"
+    assert "libusb-1.0.so.0" in done["error"] and "npm run doctor" in done["error"]
 
 
 def test_upload_validation(client):

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadSession, saveSession, type TokenStore } from './client'
+import { loadSession, saveSession, unreachableMessage, type TokenStore } from './client'
 
 function memStore(): TokenStore {
   const m = new Map<string, string>()
@@ -22,5 +22,14 @@ describe('sessione', () => {
     const s = memStore()
     s.setItem('scan3d.session', '{not json')
     expect(loadSession(s, 0)).toBeNull()
+  })
+})
+
+describe('server non raggiungibile', () => {
+  it('con un Codespace dice che è spento e come accenderlo', () => {
+    expect(unreachableMessage('https://github.com/codespaces')).toMatch(/spento.*github\.com\/codespaces/)
+  })
+  it('senza pagina di avvio resta il messaggio generico', () => {
+    expect(unreachableMessage(null)).toMatch(/non raggiungibile/)
   })
 })

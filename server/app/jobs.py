@@ -12,6 +12,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .deps import describe_import_error
 from .mesh.report import printability
 from .providers.base import JobCancelled, Provider, ProviderError, RunContext
 
@@ -193,9 +194,14 @@ class JobManager:
             job.status, job.step = "cancelled", "Annullato"
         except ProviderError as e:
             job.status, job.error = "error", str(e)
+        except (ImportError, OSError) as e:
+            # tipicamente una libreria di sistema mancante sul server: il dettaglio serve a chi lo ripara
+            (work / "error.txt").write_text(traceback.format_exc(), encoding="utf-8")
+            job.status, job.error = "error", (f"Il server non è configurato del tutto: {describe_import_error(e)}. "
+                                              "Nel Codespace esegui: npm run doctor")
         except Exception as e:  # noqa: BLE001 - qualunque errore imprevisto va mostrato, non deve uccidere il worker
             (work / "error.txt").write_text(traceback.format_exc(), encoding="utf-8")
-            job.status, job.error = "error", f"Errore imprevisto durante l'elaborazione ({type(e).__name__})."
+            job.status, job.error = "error", f"Errore imprevisto durante l'elaborazione ({type(e).__name__}: {str(e)[:160]})."
         finally:
             job.finished = time.time()
             if job.id in self._cancel:

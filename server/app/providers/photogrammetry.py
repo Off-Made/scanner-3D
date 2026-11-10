@@ -13,6 +13,7 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
+from .. import deps
 from ..config import ROOT
 from ..mesh.cleanup import points_to_mesh
 from .base import Provider, ProviderError, RunContext
@@ -48,6 +49,19 @@ def colmap_major(path: str) -> int:
         return 4
 
 
+@lru_cache(maxsize=4)
+def missing_shared_libs(binary: str, extra_lib_dir: str) -> tuple[str, ...]:
+    """Linux: librerie che `ldd` non trova per il binario (vuoto se ldd non c'è o va tutto bene)."""
+    if not shutil.which("ldd"):
+        return ()
+    env = {**os.environ, "LD_LIBRARY_PATH": f"{extra_lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
+    try:
+        out = subprocess.run(["ldd", binary], capture_output=True, text=True, timeout=30, env=env).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ()
+    return tuple(line.split("=>")[0].strip() for line in out.splitlines() if "not found" in line)
+
+
 def colmap_gpu_and_thread_options(major: int, feature_threads: int, match_threads: int) -> tuple[list[str], list[str]]:
     if major >= 4:
         return (["--FeatureExtraction.use_gpu", "0", "--FeatureExtraction.num_threads", str(feature_threads)],
@@ -72,8 +86,15 @@ class PhotogrammetryProvider(Provider):
         missing = [str(p.relative_to(ROOT)) if ROOT in p.parents else str(p)
                    for p in (colmap_bin(), omvs("InterfaceCOLMAP"), omvs("DensifyPointCloud")) if not p.exists()]
         if missing:
-            return False, "Strumenti di fotogrammetria non installati sul server: " + ", ".join(missing)
-        return True, ""
+            return False, ("Strumenti di fotogrammetria non installati sul server: " + ", ".join(missing)
+                           + (". Nel Codespace esegui: bash scripts/setup-linux-tools.sh" if not IS_WIN else ""))
+        if not IS_WIN:
+            libs = missing_shared_libs(str(omvs("DensifyPointCloud")), str(openmvs_dir()))
+            if libs:
+                return False, ("A OpenMVS mancano librerie di sistema: " + ", ".join(libs[:6])
+                               + ". Nel Codespace esegui: bash scripts/setup-linux-tools.sh")
+        why = deps.missing()
+        return (False, why) if why else (True, "")
 
     def reconstruct(self, photos: list[Path], ctx: RunContext):
         ok, why = self.available()

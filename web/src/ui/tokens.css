@@ -165,7 +165,8 @@ button, input { font: inherit; color: inherit; }
   transition: background 160ms var(--ease), color 160ms var(--ease);
 }
 .segmented button[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
-.segmented button:disabled { opacity: 0.4; }
+.segmented button:disabled, .segmented button[aria-disabled="true"] { opacity: 0.45; }
+.segmented button[aria-disabled="true"][aria-checked="true"] { opacity: 0.7; }
 
 /* ---- barra di avanzamento ---- */
 .progress { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }

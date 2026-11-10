@@ -42,6 +42,9 @@ def create_app(settings: Settings | None = None, providers: dict[str, Provider] 
     async def lifespan(_app: FastAPI):
         if settings.pin_generated:
             print(f"\n  >>> PIN di accesso per questa sessione: {settings.access_pin}  <<<\n", flush=True)
+        for p in jobs.providers.values():  # così nel log si vede subito se un motore non può funzionare
+            ok, why = p.available()
+            print(f"  [motore] {p.label or p.id}: {'pronto' if ok else 'NON disponibile — ' + why}", flush=True)
         yield
 
     app = FastAPI(title="Scan3D API", version="0.1.0", docs_url=None, redoc_url=None, lifespan=lifespan)

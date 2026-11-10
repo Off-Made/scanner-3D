@@ -71,7 +71,7 @@ Non sono nel repository (sono binari pesanti). Scaricali dalle release ufficiali
 | COLMAP 4.2.1 (no CUDA) | github.com/colmap/colmap/releases → `colmap-x64-windows-nocuda.zip` | `tools/colmap/bin/colmap.exe` |
 | OpenMVS 2.4.0 | github.com/cdcseacave/openMVS/releases → `OpenMVS_Windows_x64.zip` | `tools/openmvs/vc17/x64/Release/*.exe` |
 
-`npm run check:tools` verifica che ci siano. Su Linux (Codespace) li installa `scripts/setup-linux-tools.sh`.
+`npm run doctor` verifica che ci siano (e che i pacchetti Python si importino). Su Linux (Codespace) li installa `scripts/setup-linux-tools.sh`.
 
 > Senza strumenti l'app funziona comunque: il motore "Precisa" appare disattivato con il motivo.
 
@@ -105,24 +105,34 @@ sapere l'indirizzo del backend.
 
 ### Passo 2 — Backend nel Codespace (per i test)
 
-1. Sulla pagina della repo: **Code → Codespaces → Create codespace on main**.
+1. **Una volta sola, prima di creare il Codespace:** su github.com/settings/codespaces → **Secrets** →
+   *New secret*, con accesso alla repo `scan3d-pwa`, crea:
+
+   | Secret | Valore |
+   |---|---|
+   | `ACCESS_PIN` | il tuo PIN (6+ cifre) |
+   | `SESSION_SECRET` | una stringa casuale lunga (es. output di `openssl rand -hex 32`) |
+   | `CORS_ORIGINS` | `https://scan3d-pwa.vercel.app` (il tuo indirizzo Vercel) |
+   | `CORS_ORIGIN_REGEX` | `https://scan3d-pwa-.*\.vercel\.app` (facoltativo, anteprime Vercel) |
+   | `HF_TOKEN` | facoltativo, token Hugging Face per la modalità Rapida |
+
+   I secrets sopravvivono ai rebuild (il file `.env` invece va perso se il Codespace viene ricreato).
+   Se il Codespace esiste già, dopo aver aggiunto i secrets va **riavviato** (Stop → Start) per leggerli.
+2. Sulla pagina della repo: **Code → Codespaces → Create codespace on main**.
    Il primo avvio dura ~10–15 minuti: installa COLMAP, OpenMVS e le dipendenze (`.devcontainer/`).
-2. Nel terminale del Codespace crea il file `.env` (resta solo nel Codespace, non viene committato):
-   ```bash
-   cp .env.example .env
-   # poi apri .env e imposta almeno:
-   #   ACCESS_PIN=<6+ cifre tue>
-   #   SESSION_SECRET=<una stringa casuale lunga, es. output di: openssl rand -hex 32>
-   ```
-3. Avvia: `npm run serve` (app + API sulla porta 8000).
-4. Nella scheda **Ports** → porta 8000 → tasto destro → **Port Visibility → Public**.
-   Copia l'indirizzo (tipo `https://<nome>-8000.app.github.dev`).
-   - Da privata la porta richiederebbe il login GitHub e le chiamate dal telefono/Vercel fallirebbero.
-   - Pubblica = raggiungibile da chiunque abbia l'URL: per questo **il PIN deve essere già impostato**.
-5. **Prova subito dal telefono** aprendo quell'indirizzo in Safari: è già l'app completa (non serve Vercel per
-   il primo collaudo).
-6. Quando hai finito: **ferma il Codespace** (Code → Codespaces → ⋯ → Stop codespace). In
-   github.com/settings/codespaces imposta un **idle timeout** basso (es. 15 minuti).
+3. **Avvio automatico** (`scripts/codespace-start.sh`, ad ogni accensione): ripara gli strumenti se mancano,
+   avvia app + API sulla porta 8000 e la rende **pubblica**. Non serve più `npm run serve`.
+   - Stato: `tail .cache/codespace-start.log` · log del server: `tail -f .cache/serve.log`
+   - Diagnosi: `npm run doctor` · riavvio (es. dopo aver cambiato un secret o `.env`):
+     `bash scripts/codespace-start.sh --restart`
+   - Senza `ACCESS_PIN`/`SESSION_SECRET` il server **non parte**, perché la porta è pubblica.
+4. L'indirizzo è `https://<nome-codespace>-8000.app.github.dev` (lo trovi nel log o nella scheda **Ports**) e
+   **resta lo stesso** finché non elimini il Codespace: lo imposti su Vercel una volta sola.
+5. **Prova subito dal telefono** aprendo quell'indirizzo in Safari: è già l'app completa.
+6. Uso quotidiano: apri github.com/codespaces (anche dal telefono) → **⋯ → Open** sul Codespace
+   (o "Start"), aspetta 2–3 minuti e usa l'app. In github.com/settings/codespaces puoi alzare l'**idle
+   timeout** fino a 240 minuti e la **conservazione** fino a 30 giorni (oltre, un Codespace inutilizzato
+   viene cancellato e l'indirizzo cambia).
 
 Cosa **non** fa bene un Codespace gratuito (onestamente):
 - quota personale ~120 core-ore/mese e 15 GB; la macchina base ha 2 core / 8 GB → la fotogrammetria
@@ -137,17 +147,18 @@ Cosa **non** fa bene un Codespace gratuito (onestamente):
 3. **Environment Variables** → `VITE_API_URL` = indirizzo del backend del Passo 2
    (es. `https://<nome>-8000.app.github.dev`, senza `/` finale).
 4. **Deploy**. Otterrai un indirizzo tipo `https://scan3d-pwa.vercel.app`.
-5. Torna nel Codespace e aggiungi a `.env`:
-   ```
-   CORS_ORIGINS=https://scan3d-pwa.vercel.app
-   CORS_ORIGIN_REGEX=https://scan3d-pwa-.*\.vercel\.app
-   ```
-   poi riavvia `npm run serve`. (Senza questo il browser blocca le chiamate dal dominio Vercel.)
+5. Controlla che i secrets `CORS_ORIGINS` (e `CORS_ORIGIN_REGEX`) del Passo 2 contengano questo indirizzo,
+   poi `bash scripts/codespace-start.sh --restart`. (Senza questo il browser blocca le chiamate dal dominio Vercel.)
+   Se il Codespace è spento, l'app lo dice e mostra il pulsante **Accendi il server** (va su
+   github.com/codespaces; per un'altra pagina imposta `VITE_BACKEND_START_URL` su Vercel).
 6. Se l'indirizzo del backend cambia, aggiorna `VITE_API_URL` su Vercel e fai **Redeploy**.
 
 ### Passo 4 (facoltativo) — Backend stabile su Hugging Face Space
 
-Per un indirizzo fisso e sempre disponibile (CPU basic gratuito: 2 vCPU / 16 GB):
+⚠️ Da novembre 2026 gli Space **Docker** richiedono l'abbonamento **PRO** di Hugging Face (gratis restano solo
+gli Space statici). Questa strada quindi è a pagamento; la gratuita è il Codespace con avvio automatico.
+
+Per un indirizzo fisso e sempre disponibile (hardware CPU basic: 2 vCPU / 16 GB):
 
 1. `npm run hf-space` → crea la cartella `dist-hf-space/` (Dockerfile + server).
 2. huggingface.co → **New Space** → SDK **Docker** → hardware **CPU basic** → visibilità **Public**

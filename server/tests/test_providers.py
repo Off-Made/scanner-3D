@@ -104,3 +104,29 @@ def test_hf_client_kwargs_match_real_gradio_signature(monkeypatch):
     monkeypatch.setattr(gradio_client.Client, "__init__", fake_init)
     HuggingFaceProvider()._client()
     assert "token" in seen
+
+
+def test_describe_import_error_names_missing_system_library():
+    from app.deps import describe_import_error
+    msg = describe_import_error(ImportError("libusb-1.0.so.0: cannot open shared object file: No such file"))
+    assert "libreria di sistema" in msg and "libusb-1.0.so.0" in msg
+    assert "«open3d»" in describe_import_error(ModuleNotFoundError("No module named 'open3d'", name="open3d"))
+
+
+def test_ai_provider_unavailable_when_mesh_libraries_fail(monkeypatch):
+    from app import deps
+    monkeypatch.setattr(deps, "check_module", lambda m: "manca una libreria di sistema (libGL.so.1)" if m == "open3d" else None)
+    ok, why = HuggingFaceProvider().available()
+    assert not ok and "open3d" in why and "libGL.so.1" in why
+
+
+def test_photogrammetry_reports_missing_openmvs_libraries(monkeypatch, tmp_path):
+    from app.providers import photogrammetry as ph
+    for name in ("colmap", "InterfaceCOLMAP", "DensifyPointCloud"):
+        (tmp_path / name).write_text("")
+    monkeypatch.setattr(ph, "IS_WIN", False)
+    monkeypatch.setattr(ph, "colmap_bin", lambda: tmp_path / "colmap")
+    monkeypatch.setattr(ph, "omvs", lambda tool: tmp_path / tool)
+    monkeypatch.setattr(ph, "missing_shared_libs", lambda b, d: ("libboost_iostreams.so.1.83.0",))
+    ok, why = ph.PhotogrammetryProvider().available()
+    assert not ok and "libboost_iostreams" in why and "setup-linux-tools.sh" in why

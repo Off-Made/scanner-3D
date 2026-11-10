@@ -14,5 +14,6 @@ run('npm', ['install', '--cache', join(CACHE, 'npm')], { cwd: join(ROOT, 'web') 
 if (!hasVenv()) run(isWin ? 'python' : 'python3', ['-m', 'venv', join(ROOT, 'server', '.venv')])
 run(PY, ['-m', 'pip', 'install', '--upgrade', 'pip', '-q'])
 run(PY, ['-m', 'pip', 'install', '-r', join(ROOT, 'server', 'requirements.txt')])
-run(process.execPath, [join(ROOT, 'scripts', 'check-tools.mjs')])
+// diagnostica informativa: se manca qualcosa lo dice, ma il setup resta riuscito
+spawnSync(process.execPath, [join(ROOT, 'scripts', 'check-tools.mjs')], { stdio: 'inherit', cwd: ROOT, env })
 console.log('\nSetup completato. Avvia con:  npm run dev')

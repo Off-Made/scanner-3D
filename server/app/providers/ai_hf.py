@@ -18,6 +18,7 @@ import numpy as np
 import trimesh
 from PIL import Image
 
+from .. import deps
 from ..mesh.cleanup import mesh_to_printable
 from .base import Provider, ProviderError, RunContext
 
@@ -79,11 +80,8 @@ class HuggingFaceProvider(Provider):
         self._client_factory = client_factory  # iniettabile nei test
 
     def available(self) -> tuple[bool, str]:
-        try:
-            import gradio_client  # noqa: F401
-        except ImportError:
-            return False, "Pacchetto gradio_client non installato sul server."
-        return True, ""
+        why = deps.missing(("gradio_client", *deps.MESH_MODULES))
+        return (False, why) if why else (True, "")
 
     def _client(self):
         if self._client_factory:
