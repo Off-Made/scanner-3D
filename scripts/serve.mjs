@@ -5,6 +5,15 @@ import { join } from 'node:path'
 import { ROOT, PY, hasVenv, isWin } from './lib.mjs'
 
 if (!hasVenv()) { console.error('Virtualenv mancante: esegui prima  npm run setup'); process.exit(1) }
+
+// Un solo server per volta: se la porta risponde già (es. avviato in automatico dal Codespace), non ne parte un altro.
+const port0 = process.env.PORT ?? '8000'
+const already = await fetch(`http://127.0.0.1:${port0}/api/health`, { signal: AbortSignal.timeout(2000) }).then(r => r.ok, () => false)
+if (already) {
+  console.log(`Il server è già acceso sulla porta ${port0}: non ne avvio un secondo.`)
+  console.log('Per riavviarlo:  bash scripts/codespace-start.sh --restart   (log: .cache/serve.log)')
+  process.exit(0)
+}
 const build = spawnSync('npm', ['run', 'build'], { cwd: join(ROOT, 'web'), stdio: 'inherit', shell: isWin })
 if (build.status !== 0) process.exit(build.status ?? 1)
 

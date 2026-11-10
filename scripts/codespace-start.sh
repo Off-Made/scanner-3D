@@ -13,6 +13,10 @@ PORT=8000
 health() { curl -fsS -m 3 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; }
 say() { echo "[avvio $(date +%H:%M:%S)] $*"; }
 
+# Un solo avvio per volta (es. postStartCommand + avvio manuale insieme): il secondo si ferma subito.
+exec 9> .cache/codespace-start.lock
+if ! flock -n 9; then say "Un altro avvio è già in corso: aspetto che finisca lui."; exit 0; fi
+
 if [ "${1:-}" = "--restart" ]; then
   say "Fermo il server in esecuzione"
   pkill -f "uvicorn app.main:app" 2>/dev/null; sleep 2
@@ -39,7 +43,7 @@ if health; then say "Il server è già acceso sulla porta $PORT"; else
 
   # --- avvio del server in background ---------------------------------------------------------
   say "Avvio app + API sulla porta $PORT (log: .cache/serve.log)"
-  HOST=0.0.0.0 PORT=$PORT setsid nohup npm run serve >> .cache/serve.log 2>&1 < /dev/null &
+  HOST=0.0.0.0 PORT=$PORT setsid nohup npm run serve >> .cache/serve.log 2>&1 < /dev/null 9>&- &
   for _ in $(seq 1 90); do health && break; sleep 2; done
   if ! health; then say "Il server non risponde dopo 3 minuti: guarda .cache/serve.log"; exit 1; fi
   say "Server acceso"
@@ -48,11 +52,12 @@ fi
 # --- porta pubblica (serve il token del Codespace, presente in automatico) ----------------------
 if [ -n "${CODESPACE_NAME:-}" ] && command -v gh >/dev/null; then
   for i in 1 2 3 4 5; do
-    if gh codespace ports visibility "$PORT:public" -c "$CODESPACE_NAME" >/dev/null 2>&1; then
+    if out="$(gh codespace ports visibility "$PORT:public" -c "$CODESPACE_NAME" 2>&1)"; then
       say "Porta $PORT pubblica: https://${CODESPACE_NAME}-${PORT}.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
       exit 0
     fi
     sleep $((i * 3))
   done
+  say "GitHub ha risposto: ${out:-nessun messaggio}"
   say "Non riesco a rendere pubblica la porta: scheda Ports → porta $PORT → tasto destro → Port Visibility → Public"
 fi
