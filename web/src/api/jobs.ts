@@ -57,7 +57,8 @@ export async function syncScan(scan: Scan): Promise<Scan> {
     return (await db.scans.get(scan.id))!
   }
   if (job.status === 'done') {
-    const model = await apiBlob(`/api/jobs/${job.id}/model.glb`)
+    // ArrayBuffer e non Blob: vedi Scan.model (difetto di Safari con i Blob in IndexedDB)
+    const model = await (await apiBlob(`/api/jobs/${job.id}/model.glb`)).arrayBuffer()
     await updateScan(scan.id, {
       status: 'ready', model, report: job.report ?? undefined, cleanup: job.cleanup,
       progress: 100, step: 'Completato', processingSeconds: job.elapsedSeconds,

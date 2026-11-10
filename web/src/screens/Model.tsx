@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { AlertTriangle, CheckCircle2, Download, Layers, RotateCw, Ruler, ShieldCheck } from 'lucide-react'
-import { db, updateScan, type Scan } from '../db/scans'
+import { db, modelBytes, updateScan, type Scan } from '../db/scans'
 import { bake, checkBed, dimensions, fmt, IDENTITY_EDIT, layFlat, loadGlb, rotate90, scaleForDimension, type Axis, type Edit } from '../three/geometry'
 import { Header, Segmented, useLive } from '../ui/components'
 
@@ -26,9 +26,12 @@ export function useModelGeometry(scan?: Scan) {
   useEffect(() => {
     if (!scan?.model) return
     let alive = true
-    scan.model.arrayBuffer().then(loadGlb).then(g => alive && setBase(g)).catch(e => alive && setError(String(e.message ?? e)))
+    modelBytes(scan.model).then(loadGlb).then(g => { if (alive) { setBase(g); setError(undefined) } })
+      .catch(e => alive && setError(String(e.message ?? e)))
     return () => { alive = false }
-  }, [scan?.id, scan?.model]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Solo quando cambia la scansione o il modello arriva: NON a ogni aggiornamento (miniatura, modifiche),
+    // altrimenti si rilegge il file ogni volta. In passato una di queste riletture falliva su Safari.
+  }, [scan?.id, !!scan?.model]) // eslint-disable-line react-hooks/exhaustive-deps
   const baked = useMemo(() => (base && scan ? bake(base, scan.edit ?? IDENTITY_EDIT) : undefined), [base, scan?.edit]) // eslint-disable-line react-hooks/exhaustive-deps
   return { base, baked, error }
 }

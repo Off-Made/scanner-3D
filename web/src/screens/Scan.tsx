@@ -237,7 +237,10 @@ export function ScanScreen({ go }: { go: (hash: string) => void }) {
         <Sparkles size={22} strokeWidth={1.6} />
         {submitting ? 'Invio…' : shots.length < minPhotos ? `Servono almeno ${minPhotos} foto (${shots.length})` : `Elabora ${shots.length} foto`}
       </button>
-      <p className="muted" style={{ margin: 0 }}>Consigli: oggetto opaco e con dettagli, luce diffusa, sfondo semplice. Gira due volte: una all’altezza dell’oggetto e una dall’alto.</p>
+      {provider === 'ai'
+        ? <p className="muted" style={{ margin: 0 }}>Consigli: una foto frontale e nitida, oggetto intero e al centro, sfondo uniforme e luce diffusa. La parte che non si vede viene “immaginata”.</p>
+        : <p className="muted" style={{ margin: 0 }}>Consigli: appoggia l’oggetto su un foglio di giornale o una tovaglia a disegni (aiutano a calcolare le posizioni), luce diffusa senza riflessi, 30–40 foto girando due volte: all’altezza dell’oggetto e dall’alto.
+          Oggetti <strong>lucidi, bianchi lisci o trasparenti</strong> (custodie, bottiglie, vetro) vengono male: opacizzali con talco, borotalco spray o nastro di carta con qualche segno di pennarello.</p>}
     </section>
   )
 }

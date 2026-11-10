@@ -28,7 +28,9 @@ export interface Scan {
   step?: string
   progress?: number
   error?: string
-  model?: Blob
+  /** Il GLB. Le scansioni nuove lo salvano come ArrayBuffer: Safari a volte non riesce più a rileggere
+   *  i Blob scaricati dalla rete e salvati in IndexedDB ("The object can not be found here."). */
+  model?: Blob | ArrayBuffer
   thumb?: Blob
   report?: PrintReport
   cleanup?: string[]
@@ -56,6 +58,18 @@ export function newScan(name: string, provider: string, photos: number): Scan {
 
 export async function updateScan(id: string, patch: Partial<Scan>) {
   await db.scans.update(id, { ...patch, updatedAt: Date.now() })
+}
+
+/** Byte del modello, qualunque sia il formato con cui è stato salvato. */
+export async function modelBytes(model: Blob | ArrayBuffer): Promise<ArrayBuffer> {
+  try {
+    return model instanceof ArrayBuffer ? model : await model.arrayBuffer()
+  } catch (e) {
+    if ((e as Error)?.name === 'NotFoundError') {
+      throw new Error('Il telefono non riesce più a leggere questo modello salvato (limite di Safari). Rifai la scansione: le nuove non hanno questo problema.')
+    }
+    throw e
+  }
 }
 
 export function defaultName(date = new Date()): string {
