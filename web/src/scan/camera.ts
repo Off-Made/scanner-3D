@@ -82,7 +82,7 @@ export function stopStream(stream: MediaStream | null) {
 }
 
 /** Cattura un fotogramma ridimensionato (lato lungo = maxSide) come JPEG. Safari non ha ImageCapture. */
-export async function captureFrame(video: HTMLVideoElement, maxSide = 1600, quality = 0.85): Promise<Blob> {
+export async function captureFrame(video: HTMLVideoElement, maxSide = 2400, quality = 0.92): Promise<Blob> {
   const { videoWidth: w, videoHeight: h } = video
   if (!w || !h) throw new Error('Video non ancora pronto')
   const scale = Math.min(1, maxSide / Math.max(w, h))

@@ -24,7 +24,9 @@ else apt_install colmap || { echo "ERRORE: COLMAP non installato"; FAILED=1; }; 
 
 echo "== 3/3 OpenMVS ${OPENMVS_VERSION} (binari precompilati Ubuntu) =="
 BIN="$ROOT/tools/openmvs/bin"
-if [ -x "$BIN/DensifyPointCloud" ] && [ -x "$BIN/InterfaceCOLMAP" ]; then echo "OpenMVS già presente"
+OMVS_TOOLS="InterfaceCOLMAP DensifyPointCloud ReconstructMesh RefineMesh"
+omvs_complete() { for t in $OMVS_TOOLS; do [ -x "$BIN/$t" ] || return 1; done; }
+if omvs_complete; then echo "OpenMVS già presente"
 else
   mkdir -p "$BIN" "$ROOT/tools/_downloads"
   ZIP="$ROOT/tools/_downloads/OpenMVS_Ubuntu_x64.zip"
@@ -34,7 +36,7 @@ else
   fi
   if [ -s "$ZIP" ]; then
     rm -rf "$ROOT/tools/openmvs/_x" && unzip -q -o "$ZIP" -d "$ROOT/tools/openmvs/_x"
-    for t in InterfaceCOLMAP DensifyPointCloud ReconstructMesh; do
+    for t in $OMVS_TOOLS; do
       f="$(find "$ROOT/tools/openmvs/_x" -type f -name "$t" | head -1 || true)"
       if [ -n "$f" ]; then cp "$f" "$BIN/$t"; chmod +x "$BIN/$t"; else echo "ATTENZIONE: $t non trovato nell'archivio"; fi
     done
@@ -44,7 +46,7 @@ else
 fi
 
 # Librerie che mancano a OpenMVS: cerco il pacchetto apt che le fornisce e lo installo.
-missing_libs() { LD_LIBRARY_PATH="$BIN" ldd "$BIN/DensifyPointCloud" "$BIN/InterfaceCOLMAP" 2>/dev/null | awk '/not found/ {print $1}' | sort -u; }
+missing_libs() { for t in $OMVS_TOOLS; do [ -x "$BIN/$t" ] && LD_LIBRARY_PATH="$BIN" ldd "$BIN/$t" 2>/dev/null; done | awk '/not found/ {print $1}' | sort -u; }
 if [ -x "$BIN/DensifyPointCloud" ] && [ -n "$(missing_libs)" ]; then
   echo "== Librerie mancanti a OpenMVS: provo a installarle =="
   command -v apt-file >/dev/null || apt_install apt-file

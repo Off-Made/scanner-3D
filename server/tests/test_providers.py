@@ -140,3 +140,48 @@ def test_failed_step_message_includes_log_tail(tmp_path):
         c.run([sys.executable, "-c", "print('ERRORE: immagini non valide'); raise SystemExit(2)"],
               band=(0, 10), step="Prova", expected_s=1)
     assert "codice 2" in str(e.value) and "immagini non valide" in str(e.value)
+
+
+def test_colmap_resolution_and_low_texture_options():
+    f4, _ = colmap_gpu_and_thread_options(4, 4, 4, 2000)
+    assert f4[f4.index("--FeatureExtraction.max_image_size") + 1] == "2000"
+    assert "--SiftExtraction.domain_size_pooling" in f4
+    f3, _ = colmap_gpu_and_thread_options(3, 4, 4, 2000)
+    assert "--SiftExtraction.max_image_size" in f3
+
+
+class FakeRun:
+    """ctx.run finto: registra i programmi e crea i file che produrrebbero (o fallisce a comando)."""
+
+    def __init__(self, w, fail=()):
+        self.w, self.fail, self.calls = w, set(fail), []
+
+    def __call__(self, cmd, band, step, expected_s, cwd=None, env=None):
+        tool = Path(str(cmd[0])).stem
+        self.calls.append(tool)
+        if tool in self.fail:
+            raise ProviderError(f"{tool} fallito")
+        out = {"ReconstructMesh": "scene_dense_mesh.ply", "RefineMesh": "scene_dense_mesh_refine.ply"}.get(tool)
+        if out:
+            (self.w / out).write_text("")
+
+
+@pytest.mark.parametrize("fail, refine_present, expected, note", [
+    ((), True, "scene_dense_mesh_refine.ply", "affinata"),
+    (("RefineMesh",), True, "scene_dense_mesh.ply", "Affinamento non riuscito"),
+    ((), False, "scene_dense_mesh.ply", "manca RefineMesh"),
+    (("ReconstructMesh",), True, None, "nuvola di punti"),
+])
+def test_openmvs_mesh_fallback_chain(monkeypatch, tmp_path, fail, refine_present, expected, note):
+    from app.providers import photogrammetry as ph
+    for name in ("ReconstructMesh", *(["RefineMesh"] if refine_present else [])):
+        (tmp_path / name).write_text("")
+    monkeypatch.setattr(ph, "omvs", lambda tool: tmp_path / tool)
+    c = ctx(tmp_path)
+    fake = FakeRun(tmp_path, fail)
+    monkeypatch.setattr(c, "run", fake)
+    surface, notes = ph.PhotogrammetryProvider().mesh_from_dense(c, tmp_path, [], None, 30)
+    assert (surface.name if surface else None) == expected
+    assert any(note in n for n in notes)
+    if "ReconstructMesh" in fail:
+        assert "RefineMesh" not in fake.calls  # niente affinamento senza superficie

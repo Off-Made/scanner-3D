@@ -117,11 +117,11 @@ def test_max_40_photos(client, tmp_path):
     assert r.status_code == 400 and "40" in r.json()["detail"]
 
 
-def test_photos_are_resized_to_1600(client, tmp_path):
+def test_photos_are_resized_to_2400(client, tmp_path):
     job = client.post("/api/jobs", json={"provider": "mock"}).json()
     client.post(f"/api/jobs/{job['id']}/photos", files={"photo": ("big.jpg", jpeg(4032, 3024), "image/jpeg")})
     saved = next((tmp_path / "jobs" / job["id"] / "photos").glob("*.jpg"))
-    assert max(Image.open(saved).size) == 1600
+    assert max(Image.open(saved).size) == 2400
 
 
 def test_jobs_require_token(tmp_path):

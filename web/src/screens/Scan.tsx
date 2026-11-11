@@ -79,7 +79,7 @@ export function ScanScreen({ go }: { go: (hash: string) => void }) {
     if (busy.current || !videoRef.current || shots.length >= MAX_PHOTOS) return
     busy.current = true
     try {
-      const blob = await captureFrame(videoRef.current, 1600, 0.88)
+      const blob = await captureFrame(videoRef.current) // risoluzione piena del video (fino a 1920×1440)
       const o = orient.current
       cov.mark(o.heading ?? shots.length * 15, o.beta) // senza giroscopio: stima dal numero di foto
       addShot(blob)

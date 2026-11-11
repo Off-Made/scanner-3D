@@ -1,7 +1,15 @@
-"""Fotogrammetria su CPU: COLMAP (pose) + OpenMVS (punti densi) + pulizia Open3D/trimesh.
+"""Fotogrammetria su CPU: COLMAP (pose) + OpenMVS (punti densi, mesh, affinamento) + pulizia.
 
-Configurazione dal benchmark (README): foto a 1600 px, matcher exhaustive, 4 thread per
-l'estrazione delle feature (con 12 thread la RAM esplodeva a 8 GB), priorità bassa.
+  COLMAP:  feature (max 2000 px, 4 thread: con 12 la RAM esplodeva) -> matching exhaustive -> pose
+  OpenMVS: DensifyPointCloud (risoluzione piena, max 2048 px) -> ReconstructMesh (graph-cut sulla
+           visibilità: segue i punti veri, niente "bolle") -> RefineMesh (affina la superficie
+           confrontando le foto: recupera i dettagli fini)
+  Pulizia: tavolo, oggetto, base piatta, fori chiusi senza deformare (mesh/cleanup.py)
+
+Ogni passo di qualità ha un ripiego: senza RefineMesh si usa la mesh grezza, senza
+ReconstructMesh si torna alla nuvola di punti (Poisson). Priorità bassa per tutti i programmi.
+Variabili: PHOTO_FEATURE_THREADS, PHOTO_MATCH_THREADS, PHOTO_FEATURE_MAX_SIZE, PHOTO_MAX_IMAGE,
+PHOTO_RESOLUTION_LEVEL, PHOTO_MAX_RESOLUTION, PHOTO_REFINE (0 = niente affinamento), PHOTO_REFINE_LEVEL.
 """
 from __future__ import annotations
 
@@ -15,7 +23,7 @@ from pathlib import Path
 
 from .. import deps
 from ..config import ROOT
-from ..mesh.cleanup import points_to_mesh
+from ..mesh.cleanup import points_to_mesh, surface_to_printable
 from .base import Provider, ProviderError, RunContext
 
 IS_WIN = sys.platform == "win32"
@@ -62,29 +70,41 @@ def missing_shared_libs(binary: str, extra_lib_dir: str) -> tuple[str, ...]:
     return tuple(line.split("=>")[0].strip() for line in out.splitlines() if "not found" in line)
 
 
-def colmap_gpu_and_thread_options(major: int, feature_threads: int, match_threads: int) -> tuple[list[str], list[str]]:
-    if major >= 4:
-        return (["--FeatureExtraction.use_gpu", "0", "--FeatureExtraction.num_threads", str(feature_threads)],
-                ["--FeatureMatching.use_gpu", "0", "--FeatureMatching.num_threads", str(match_threads)])
-    return (["--SiftExtraction.use_gpu", "0", "--SiftExtraction.num_threads", str(feature_threads)],
-            ["--SiftMatching.use_gpu", "0", "--SiftMatching.num_threads", str(match_threads)])
+def colmap_gpu_and_thread_options(major: int, feature_threads: int, match_threads: int,
+                                  max_image_size: int | None = None) -> tuple[list[str], list[str]]:
+    """Opzioni di estrazione e matching. COLMAP 4.x ha spostato le opzioni generiche in
+    FeatureExtraction/FeatureMatching; quelle specifiche di SIFT restano in SiftExtraction."""
+    fe = "FeatureExtraction" if major >= 4 else "SiftExtraction"
+    fm = "FeatureMatching" if major >= 4 else "SiftMatching"
+    feat = [f"--{fe}.use_gpu", "0", f"--{fe}.num_threads", str(feature_threads)]
+    if max_image_size:
+        # domain size pooling: descrittori più robusti su superfici con poca texture (oggetti in tinta unita)
+        feat += [f"--{fe}.max_image_size", str(max_image_size), "--SiftExtraction.domain_size_pooling", "1"]
+    return feat, [f"--{fm}.use_gpu", "0", f"--{fm}.num_threads", str(match_threads)]
 
 
 class PhotogrammetryProvider(Provider):
     id = "photo"
     label = "Precisa (foto)"
-    description = "Fotogrammetria: forma fedele all'oggetto. 20–40 foto, circa 10 minuti."
+    description = ("Fotogrammetria: forma fedele all'oggetto. 20–40 foto, 15–25 minuti. "
+                   "Non funziona su oggetti trasparenti; quelli lucidi vanno opacizzati (es. talco).")
     min_photos = 12
     max_photos = 40
 
     def __init__(self):
         self.feature_threads = int(os.getenv("PHOTO_FEATURE_THREADS", "4"))
         self.match_threads = int(os.getenv("PHOTO_MATCH_THREADS", "4"))
-        self.res_level = int(os.getenv("PHOTO_RESOLUTION_LEVEL", "1"))
+        self.feature_max_size = int(os.getenv("PHOTO_FEATURE_MAX_SIZE", "2000"))
+        self.max_image = int(os.getenv("PHOTO_MAX_IMAGE", "2400"))
+        self.res_level = int(os.getenv("PHOTO_RESOLUTION_LEVEL", "0"))
+        self.max_resolution = int(os.getenv("PHOTO_MAX_RESOLUTION", "2048"))
+        self.refine = os.getenv("PHOTO_REFINE", "1") != "0"
+        self.refine_level = int(os.getenv("PHOTO_REFINE_LEVEL", "1"))
 
     def available(self) -> tuple[bool, str]:
         missing = [str(p.relative_to(ROOT)) if ROOT in p.parents else str(p)
-                   for p in (colmap_bin(), omvs("InterfaceCOLMAP"), omvs("DensifyPointCloud")) if not p.exists()]
+                   for p in (colmap_bin(), omvs("InterfaceCOLMAP"), omvs("DensifyPointCloud"))
+                   if not p.exists()]
         if missing:
             return False, ("Strumenti di fotogrammetria non installati sul server: " + ", ".join(missing)
                            + (". Nel Codespace esegui: bash scripts/setup-linux-tools.sh" if not IS_WIN else ""))
@@ -105,38 +125,75 @@ class PhotogrammetryProvider(Provider):
         db, sparse, dense = w / "db.db", w / "sparse", w / "dense"
         sparse.mkdir(parents=True, exist_ok=True)
         colmap = colmap_bin()
-        feat_opts, match_opts = colmap_gpu_and_thread_options(colmap_major(str(colmap)), self.feature_threads, self.match_threads)
+        feat_opts, match_opts = colmap_gpu_and_thread_options(colmap_major(str(colmap)), self.feature_threads,
+                                                              self.match_threads, self.feature_max_size)
         n = len(photos)
 
         ctx.run([colmap, "feature_extractor", "--database_path", db, "--image_path", images,
                  "--ImageReader.single_camera", "1", *feat_opts],
-                band=(2, 18), step="Analisi dei dettagli nelle foto", expected_s=2.5 * n)
+                band=(2, 12), step="Analisi dei dettagli nelle foto", expected_s=3.5 * n)
         ctx.run([colmap, "exhaustive_matcher", "--database_path", db, *match_opts],
-                band=(18, 36), step="Confronto delle foto tra loro", expected_s=0.12 * n * n)
+                band=(12, 24), step="Confronto delle foto tra loro", expected_s=0.15 * n * n)
         ctx.run([colmap, "mapper", "--database_path", db, "--image_path", images, "--output_path", sparse],
-                band=(36, 44), step="Calcolo delle posizioni della fotocamera", expected_s=0.8 * n)
+                band=(24, 30), step="Calcolo delle posizioni della fotocamera", expected_s=0.8 * n)
         models = sorted(p for p in sparse.iterdir() if p.is_dir())
         if not models:
             raise ProviderError("Le foto non si sovrappongono abbastanza: scattane di più girando lentamente "
                                 "attorno all'oggetto, con buona luce.")
         model = max(models, key=lambda p: (p / "images.bin").stat().st_size if (p / "images.bin").exists() else 0)
         ctx.run([colmap, "image_undistorter", "--image_path", images, "--input_path", model,
-                 "--output_path", dense, "--output_type", "COLMAP"],
-                band=(44, 46), step="Preparazione delle immagini", expected_s=3)
+                 "--output_path", dense, "--output_type", "COLMAP", "--max_image_size", str(self.max_image)],
+                band=(30, 32), step="Preparazione delle immagini", expected_s=4)
         # su Linux i binari di OpenMVS usano librerie incluse nella stessa cartella
         omvs_env = None if IS_WIN else {**os.environ, "LD_LIBRARY_PATH": f"{openmvs_dir()}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
+        common = ["--process-priority", "-1", "--max-threads", "0", "-w", w]
         ctx.run([omvs("InterfaceCOLMAP"), "-i", dense, "-o", w / "scene.mvs", "--image-folder", dense / "images", "-w", w],
-                band=(46, 47), step="Preparazione della ricostruzione densa", expected_s=2, env=omvs_env)
+                band=(32, 33), step="Preparazione della ricostruzione densa", expected_s=2, env=omvs_env)
         ctx.run([omvs("DensifyPointCloud"), w / "scene.mvs", "--resolution-level", str(self.res_level),
-                 "--process-priority", "-1", "--max-threads", "0", "-w", w],
-                band=(47, 85), step="Ricostruzione della superficie (la parte più lunga)", expected_s=8 * n, env=omvs_env)
+                 "--max-resolution", str(self.max_resolution), "--min-resolution", "640", *common],
+                band=(33, 60), step="Ricostruzione dei punti 3D (la parte più lunga)", expected_s=18 * n, env=omvs_env)
         ply = w / "scene_dense.ply"
         if not ply.exists():
             raise ProviderError("La ricostruzione densa non ha prodotto punti. Riprova con più luce e foto più nitide.")
 
-        ctx.progress(86, "Pulizia del modello")
+        surface, notes = self.mesh_from_dense(ctx, w, common, omvs_env, n)
+        ctx.progress(88, "Pulizia del modello")
         try:
-            mesh, info = points_to_mesh(str(ply), progress=lambda m: ctx.progress(90, m))
+            if surface is not None:
+                import trimesh
+
+                mesh, info = surface_to_printable(trimesh.load(surface, force="mesh"), progress=lambda m: ctx.progress(92, m))
+            else:
+                mesh, info = points_to_mesh(str(ply), progress=lambda m: ctx.progress(92, m))
         except ValueError as e:
             raise ProviderError(str(e)) from e
-        return mesh, info.steps
+        return mesh, [*notes, *info.steps]
+
+    def mesh_from_dense(self, ctx: RunContext, w: Path, common: list, env, n: int) -> tuple[Path | None, list[str]]:
+        """Superficie da OpenMVS: ReconstructMesh e, se possibile, RefineMesh.
+        Restituisce (file .ply, oppure None per ripiegare sulla nuvola di punti; note per l'utente)."""
+        mesh_ply = w / "scene_dense_mesh.ply"
+        if omvs("ReconstructMesh").exists():
+            try:
+                # free-space-support: aiuta le superfici povere di texture; smooth 1 (invece di 2): spigoli più vivi
+                ctx.run([omvs("ReconstructMesh"), w / "scene_dense.mvs", "-p", w / "scene_dense.ply",
+                         "-o", w / "scene_dense_mesh.mvs", "--free-space-support", "1", "--smooth", "1", *common],
+                        band=(60, 68), step="Costruzione della superficie", expected_s=3 * n, env=env)
+            except ProviderError:
+                pass  # ripiego sulla nuvola di punti, qui sotto
+        if not mesh_ply.exists():
+            return None, ["Superficie di OpenMVS non riuscita: ricostruita dalla nuvola di punti (meno precisa)"]
+        if not self.refine:
+            return mesh_ply, ["Affinamento disattivato sul server (PHOTO_REFINE=0)"]
+        if not omvs("RefineMesh").exists():
+            return mesh_ply, ["Affinamento non disponibile sul server (manca RefineMesh): dettagli fini ridotti"]
+        refined = w / "scene_dense_mesh_refine.ply"
+        try:
+            ctx.run([omvs("RefineMesh"), w / "scene_dense.mvs", "-m", mesh_ply, "-o", w / "scene_dense_mesh_refine.mvs",
+                     "--resolution-level", str(self.refine_level), "--scales", "1", "--max-face-area", "16", *common],
+                    band=(68, 87), step="Affinamento dei dettagli con le foto", expected_s=12 * n, env=env)
+        except ProviderError:
+            pass
+        if refined.exists():
+            return refined, ["Superficie affinata confrontando le foto"]
+        return mesh_ply, ["Affinamento non riuscito: uso la superficie senza affinamento"]

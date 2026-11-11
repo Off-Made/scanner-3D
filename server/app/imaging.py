@@ -1,4 +1,4 @@
-"""Normalizzazione delle foto caricate: orientamento EXIF, HEIC, ridimensionamento a 1600 px."""
+"""Normalizzazione delle foto caricate: orientamento EXIF, HEIC, ridimensionamento a 2400 px (oltre, OpenMVS non lo userebbe)."""
 from __future__ import annotations
 
 import io
@@ -13,7 +13,7 @@ try:  # foto HEIC caricate dalla galleria iPhone
 except ImportError:  # pragma: no cover
     pass
 
-MAX_SIDE = 1600
+MAX_SIDE = 2400
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MIN_SIDE = 320
 
@@ -34,5 +34,5 @@ def save_normalized(data: bytes, dest: Path, max_side: int = MAX_SIDE) -> tuple[
         raise BadImage(f"Foto troppo piccola ({im.width}×{im.height}): servono almeno {MIN_SIDE} px.")
     im.thumbnail((max_side, max_side), Image.LANCZOS)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    im.save(dest, "JPEG", quality=90)
+    im.save(dest, "JPEG", quality=93)  # meno artefatti JPEG = meno falsi dettagli per COLMAP
     return im.size

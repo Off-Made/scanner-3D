@@ -61,8 +61,8 @@ describe('immagini', () => {
     expect(s[39]).toBe(99)
     expect(subsample([1, 2], 40)).toEqual([1, 2])
   })
-  it('ridimensiona il lato lungo a 1600 senza ingrandire', () => {
-    expect(fitSize(4032, 3024)).toEqual({ width: 1600, height: 1200 })
+  it('ridimensiona il lato lungo a 2400 senza ingrandire', () => {
+    expect(fitSize(4032, 3024)).toEqual({ width: 2400, height: 1800 })
     expect(fitSize(640, 480)).toEqual({ width: 640, height: 480 })
   })
 })

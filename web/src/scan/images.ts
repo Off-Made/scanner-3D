@@ -1,6 +1,6 @@
-// Foto importate da galleria/file: ridimensionamento a 1600 px nel telefono (upload più veloce).
+// Foto importate da galleria/file: ridimensionamento a 2400 px nel telefono (il server non usa di più).
 
-export const MAX_SIDE = 1600
+export const MAX_SIDE = 2400
 
 /** Se l'utente sceglie più foto del massimo, ne tengo una selezione uniforme (come nel benchmark). */
 export function subsample<T>(items: T[], max: number): T[] {
@@ -28,5 +28,5 @@ export async function resizeImageFile(file: File, maxSide = MAX_SIDE): Promise<B
   canvas.height = height
   canvas.getContext('2d')!.drawImage(bmp, 0, 0, width, height)
   bmp.close()
-  return new Promise((resolve) => canvas.toBlob(b => resolve(b ?? file), 'image/jpeg', 0.88))
+  return new Promise((resolve) => canvas.toBlob(b => resolve(b ?? file), 'image/jpeg', 0.92))
 }
