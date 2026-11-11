@@ -35,6 +35,13 @@ if health; then say "Il server è già acceso sulla porta $PORT"; else
   # --- auto-riparazione: dipendenze Python e strumenti di fotogrammetria ------------------------
   # virtualenv mancante o rotto (es. il Python del Codespace è cambiato dopo un rebuild): setup lo ricrea
   server/.venv/bin/python -c "import pip" >/dev/null 2>&1 || { say "Virtualenv mancante o rotto: npm run setup"; npm run setup; }
+  # requirements.txt cambiato (es. nuove librerie dopo un git pull): reinstallo i pacchetti Python
+  REQ_SUM="$(sha256sum server/requirements.txt | cut -d' ' -f1)"
+  if [ "$(cat .cache/requirements.sha 2>/dev/null)" != "$REQ_SUM" ]; then
+    say "Pacchetti Python da aggiornare (requirements.txt cambiato): installo"
+    server/.venv/bin/python -m pip install -q -r server/requirements.txt >> .cache/pip.log 2>&1 \
+      && echo "$REQ_SUM" > .cache/requirements.sha || say "pip con errori: guarda .cache/pip.log"
+  fi
   if ! server/.venv/bin/python scripts/doctor.py >/dev/null 2>&1; then
     say "Mancano componenti: rilancio l'installazione (qualche minuto, log in .cache/setup-tools.log)"
     bash scripts/setup-linux-tools.sh >/dev/null 2>&1 || say "Installazione con errori: guarda .cache/setup-tools.log"
