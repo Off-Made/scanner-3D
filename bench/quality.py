@@ -39,18 +39,27 @@ VARIANTS = {
 }
 
 
-def dataset_dir(name: str) -> Path:
-    return ROOT / "bench" / "dataset" / f"_{name}" / name
+IMAGE_EXT = (".png", ".jpg", ".jpeg")
+
+
+def dataset_images(name: str) -> list[Path]:
+    """Immagini del dataset, ovunque si trovino dentro bench/dataset/_<nome> (lo zip può avere sottocartelle)."""
+    base = ROOT / "bench" / "dataset" / f"_{name}"
+    return sorted(p for p in base.rglob("*") if p.suffix.lower() in IMAGE_EXT) if base.exists() else []
 
 
 def download(name: str) -> None:
-    if dataset_dir(name).exists():
-        print(f"{name}: già presente")
+    if dataset_images(name):
+        print(f"{name}: già presente ({len(dataset_images(name))} immagini)")
         return
-    print(f"{name}: download…")
-    with urllib.request.urlopen(DATASETS[name], timeout=120) as r:
+    print(f"{name}: download da {DATASETS[name]} …", flush=True)
+    with urllib.request.urlopen(DATASETS[name], timeout=300) as r:
         data = r.read()
     zipfile.ZipFile(io.BytesIO(data)).extractall(ROOT / "bench" / "dataset" / f"_{name}")
+    n = len(dataset_images(name))
+    if not n:
+        raise SystemExit(f"{name}: lo zip non contiene immagini PNG/JPG")
+    print(f"{name}: {n} immagini")
 
 
 def run(name: str, variant: str, n: int) -> dict:
@@ -68,7 +77,9 @@ def run(name: str, variant: str, n: int) -> dict:
     shutil.rmtree(out, ignore_errors=True)
     photos_dir, work = out / "photos", out / "work"
     work.mkdir(parents=True)
-    src = sorted(p for p in dataset_dir(name).iterdir() if p.suffix.lower() in (".png", ".jpg", ".jpeg"))
+    if not dataset_images(name):
+        download(name)  # se manca, lo scarico ora
+    src = dataset_images(name)
     if len(src) > n:  # selezione uniforme, come l'import dalla galleria
         src = [src[round(i * (len(src) - 1) / (n - 1))] for i in range(n)]
     photos = []
