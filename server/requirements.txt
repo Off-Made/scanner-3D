@@ -19,3 +19,5 @@ rtree>=1.2
 networkx>=3
 mapbox_earcut>=1.0
 lxml>=5
+pymeshfix>=0.17
+fast-simplification>=0.1.7

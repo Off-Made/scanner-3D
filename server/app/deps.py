@@ -10,7 +10,7 @@ import importlib
 from functools import lru_cache
 
 # moduli usati dalla pulizia della mesh, comune a tutti i motori
-MESH_MODULES = ("numpy", "scipy", "trimesh", "open3d", "manifold3d")
+MESH_MODULES = ("numpy", "scipy", "trimesh", "open3d", "manifold3d", "pymeshfix", "fast_simplification")
 
 
 def describe_import_error(e: BaseException) -> str:
