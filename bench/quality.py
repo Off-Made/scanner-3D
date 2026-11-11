@@ -21,6 +21,7 @@ import os
 import shutil
 import sys
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -53,8 +54,17 @@ def download(name: str) -> None:
         print(f"{name}: già presente ({len(dataset_images(name))} immagini)")
         return
     print(f"{name}: download da {DATASETS[name]} …", flush=True)
-    with urllib.request.urlopen(DATASETS[name], timeout=300) as r:
-        data = r.read()
+    # alcuni server rifiutano (403) il client predefinito "Python-urllib": mi presento come un browser generico
+    req = urllib.request.Request(DATASETS[name], headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"})
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            data = r.read()
+    except urllib.error.URLError as e:
+        dest = ROOT / "bench" / "dataset" / f"_{name}"
+        raise SystemExit(
+            f"{name}: download non riuscito ({e}).\n"
+            f"Alternativa: copia a mano la cartella con le immagini in {dest.relative_to(ROOT)}/\n"
+            f"(nel Codespace: trascinala dal PC nell'Explorer di VS Code dentro bench/dataset/_{name}/).")
     zipfile.ZipFile(io.BytesIO(data)).extractall(ROOT / "bench" / "dataset" / f"_{name}")
     n = len(dataset_images(name))
     if not n:
