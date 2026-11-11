@@ -228,11 +228,18 @@ Tutte in `.env` (vedi `.env.example`). Non committare mai `.env`.
 | `JOB_TTL_HOURS` | 48 | dopo quanto i job non scaricati vengono cancellati |
 | `PHOTO_FEATURE_THREADS` | 4 | thread di estrazione feature (più thread = più RAM) |
 | `PHOTO_MATCH_THREADS` | 4 | thread del confronto tra foto |
-| `PHOTO_RESOLUTION_LEVEL` | 1 | OpenMVS: 0 = piena risoluzione, 1 = metà (più veloce) |
+| `PHOTO_RESOLUTION_LEVEL` | 0 | OpenMVS: 0 = piena risoluzione, 1 = metà (più veloce, meno dettagli) |
+| `PHOTO_MAX_RESOLUTION` | 2048 | lato massimo delle foto usate da OpenMVS (più alto = più lento) |
+| `PHOTO_FEATURE_MAX_SIZE` | 2000 | lato massimo per l'analisi COLMAP (più alto = più RAM) |
+| `PHOTO_MAX_IMAGE` | 2400 | lato massimo delle immagini raddrizzate per OpenMVS |
+| `PHOTO_REFINE` | 1 | 0 = salta l'affinamento con le foto (più veloce, dettagli fini ridotti) |
+| `PHOTO_REFINE_LEVEL` | 1 | risoluzione dell'affinamento: 0 = piena (molto lento), 1 = metà |
 | `COLMAP_BIN`, `OPENMVS_DIR` | auto | percorsi degli strumenti |
-| `HF_SPACE` | `tencent/Hunyuan3D-2` | Space AI immagine→3D |
+| `HF_SPACE` | `tencent/Hunyuan3D-2mv` | Space AI multi-vista (fronte/retro/fianchi)→3D |
 | `HF_API_NAME` | `/shape_generation` | endpoint dello Space |
 | `HF_TOKEN` | vuoto | token HF facoltativo (quote migliori) |
+| `HF_MV_SWAP_LR` | 0 | 1 = scambia le viste sinistra/destra (se il modello AI esce specchiato) |
+| `HF_OCTREE_RESOLUTION` | 380 | dettaglio della mesh AI (0 = valore dello Space) |
 | `VITE_API_URL` | vuoto | **solo Vercel**: indirizzo del backend |
 | `SCAN3D_ENABLE_MOCK` | vuoto | `1` = motore "Demo" per test/sviluppo |
 
@@ -241,7 +248,7 @@ Tutte in `.env` (vedi `.env.example`). Non committare mai `.env`.
   domini diversi (Vercel ↔ backend), il token nell'header funziona ovunque.
 - Max 5 tentativi di PIN al minuto per IP. L'IP reale si legge dagli header **solo** se la richiesta arriva
   da un proxy fidato (altrimenti chiunque potrebbe falsificarli).
-- CORS: solo le origini configurate. Foto: max 40 per scansione, max 25 MB l'una, convertite a 1600 px.
+- CORS: solo le origini configurate. Foto: max 40 per scansione, max 25 MB l'una, convertite a 2400 px.
 
 ---
 
@@ -291,11 +298,16 @@ Il collaudo e2e completo (app → server → modello → export) è riportato in
   metallo lucido, superfici lisce e uniformi (come il dinosauro del test), oggetti sottili (fili, foglie).
 - **Scala**: la fotografia non conosce le misure. Il modello arriva con il lato lungo a 100 mm ("scala
   indicativa") finché non inserisci una misura reale presa col righello. Precisione attesa: qualche mm.
-- **Dettagli**: per garantire una mesh chiusa e stampabile il modello viene "solidificato" (voxel ~0,5% del
-  lato lungo): fessure e dettagli molto fini si riempiono o si arrotondano. La base è sempre piatta.
-- **AI (Rapida)**: forma plausibile ma **inventata** (soprattutto il retro), quote gratuite limitate, lo Space
-  può cambiare API o sparire. Configurabile con `HF_SPACE` / `HF_API_NAME`.
-- **Tempi**: ~8–12 min per 40 foto sul PC di sviluppo; su server gratuiti a 2 core molto di più.
+- **Dettagli e buchi**: la superficie viene da OpenMVS (ReconstructMesh + RefineMesh, che la affina
+  confrontandola con le foto). I fori, cioè le zone che nessuna foto vede, vengono chiusi con superfici minime
+  (MeshFix) **senza toccare il resto**. La base viene ricostruita piatta sul piano del tavolo. Nel controllo
+  "Fedeltà alla scansione" vedi quanta superficie è stata stimata e lo scostamento medio in mm. Solo se la
+  chiusura fine fallisce si ripiega sulla solidificazione a voxel, che arrotonda i dettagli più fini.
+- **AI (Rapida)**: usa fino a 4 viste (fronte/retro/fianchi), scelte con la bussola. Il risultato è più fedele
+  di una foto sola, ma i dettagli sono stimati. Le quote gratuite sono limitate e lo Space può cambiare API o
+  sparire. Configurabile con `HF_SPACE` / `HF_API_NAME`.
+- **Tempi**: obiettivo ≤ 25 min per 40 foto sul Codespace a 2 core (da verificare con `bench/quality.py`).
+  Se serve più velocità: `PHOTO_REFINE=0` oppure `PHOTO_MAX_RESOLUTION=1600`.
 - **Upload**: va tenuta aperta l'app finché le foto non sono state inviate; dopo, la ricostruzione continua sul
   server anche ad app chiusa.
 - **Invio diretto alla stampante** (OctoPrint/Moonraker): non incluso. Richiederebbe uno slicer lato server

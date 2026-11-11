@@ -44,10 +44,25 @@ Stato di avanzamento, decisioni e come riprendere il lavoro.
       Codespaces, porta pubblica via `gh`), `npm run doctor`, setup Linux idempotente con log, errori
       ImportError leggibili, motori "non disponibili" con motivo visibile anche sul telefono
 - [ ] (Utente) Nel Codespace: impostare i secrets, rebuild, `npm run doctor` verde, collaudo Precisa + Rapida
+- [x] 2026-11-11 — **Modelli più precisi e senza buchi** (piano: ~/.claude/plans/questo-il-mio-keen-hamming.md):
+      foto a 2400 px; OpenMVS a piena risoluzione + ReconstructMesh + RefineMesh (con ripieghi); fori chiusi con
+      MeshFix senza gonfiare la forma; base piatta estrusa; report "Fedeltà alla scansione"; AI multi-vista
+      Hunyuan3D-2mv con viste scelte dalla bussola; consigli per oggetti lucidi/piccoli/dettagli fini
+- [ ] **Nel Codespace (ripartire da qui):**
+      1. `bash scripts/setup-linux-tools.sh` (installa RefineMesh) e `server/.venv/bin/pip install -r server/requirements.txt`
+         (pymeshfix, fast-simplification), poi `npm run doctor`
+      2. `server/.venv/bin/python bench/quality.py --download` e poi
+         `server/.venv/bin/python bench/quality.py --variants predefinita veloce` → tabella qui sotto. FERMARSI se
+         la predefinita supera 25 min o 7 GB: regolare `PHOTO_MAX_RESOLUTION` / `PHOTO_REFINE` insieme all'utente
+      3. collaudo AI multi-vista da iPhone: se il modello esce specchiato → `HF_MV_SWAP_LR=1`
+      4. collaudo Precisa da iPhone: un oggetto con dettagli fini e uno lucido opacizzato
 
 ## Decisioni
 | Data | Decisione |
 |---|---|
+| 2026-11-11 | Precisa fino a ~25 min (scelta utente): risoluzione piena + RefineMesh; foto a 2400 px (oltre OpenMVS non le usa) |
+| 2026-11-11 | Buchi chiusi con MeshFix (solo i fori); la solidificazione a voxel resta come ripiego (384 voxel, max 7 di chiusura) |
+| 2026-11-11 | AI: Hunyuan3D-2mv con 4 viste dalla bussola; senza bussola solo fronte+retro |
 | 2026-11-10 | HF Space Docker ora a pagamento (PRO): backend resta nel Codespace, con avvio automatico |
 | 2026-11-06 | Fotogrammetria: 1600 px, exhaustive, 4 thread, priorità BelowNormal, max 40 foto |
 | 2026-11-06 | Nessun tunnel (bloccato dalla rete + policy). Test da telefono via Codespace/Vercel |
@@ -56,7 +71,7 @@ Stato di avanzamento, decisioni e come riprendere il lavoro.
 | 2026-11-06 | Invio a stampanti fuori scope per ora |
 | 2026-11-06 | Modello normalizzato a 100 mm sul lato lungo finché l'utente non inserisce una misura reale |
 | 2026-11-06 | Archivio solo nel telefono; il server cancella il job appena il modello è scaricato |
-| 2026-11-06 | Mesh resa stampabile con solidificazione a voxel (chiusa per costruzione) a costo di dettagli fini |
+| 2026-11-06 | ~~Mesh resa stampabile con solidificazione a voxel~~ (sostituita il 2026-11-11: deformava la forma) |
 | 2026-11-06 | `npm` del PC usa un registry aziendale: `.npmrc` con `omit-lockfile-registry-resolved=true` |
 
 ## Bug trovati e corretti durante i test
@@ -68,6 +83,11 @@ Stato di avanzamento, decisioni e come riprendere il lavoro.
 - Windows: `os.replace` di `job.json` fallisce se l'antivirus tiene aperto il file → nuovi tentativi.
 - Mirino troppo alto su iPhone: l'otturatore finiva fuori schermo.
 - Bundle iniziale 820 kB → 364 kB (three.js caricato solo dove serve).
+- Forma "gonfiata": la solidificazione dilatava fino a 11 voxel (risoluzione 200) e riempiva le fessure ~5% → MeshFix.
+- Foto dimezzate due volte (1600 px + `--resolution-level 1`): OpenMVS lavorava a ~800 px.
+- `largest_component` preferiva un sassolino chiuso a un oggetto aperto più grande → ora per area.
+- Piano del tavolo instabile (RANSAC di Open3D è parallelo) → rifinitura ai minimi quadrati (SVD).
+- Semplificazione Open3D: 237 s su 1,5 M triangoli → fast_simplification, < 1 s.
 
 ## Collaudo
 Vedi la sezione "Risultati del collaudo" in fondo (aggiornata all'ultima esecuzione).
