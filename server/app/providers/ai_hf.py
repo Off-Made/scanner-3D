@@ -22,12 +22,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
-import trimesh
 from PIL import Image
 
 from .. import deps
-from ..mesh.cleanup import mesh_to_printable
-from .base import Provider, ProviderError, RunContext
+from .base import Provider, ProviderError, RunContext, clean_in_subprocess
+
+AI_MAX_FACES = 400_000  # la mesh AI è liscia: oltre non c'è dettaglio in più, solo memoria (arrivava a 3,7 M)
 
 MESH_EXT = (".glb", ".gltf", ".obj", ".ply", ".stl")
 VIEW_ANGLES = {"front": 0.0, "right": 90.0, "back": 180.0, "left": 270.0}
@@ -188,15 +188,11 @@ class HuggingFaceProvider(Provider):
         path = find_mesh_file(result)
         if not path:
             raise ProviderError("Il servizio AI non ha restituito un modello 3D.")
-        ctx.progress(85, "Pulizia del modello")
-        loaded = trimesh.load(path, force="mesh")
-        try:
-            mesh, info = mesh_to_printable(loaded, progress=lambda m: ctx.progress(92, m),
-                                           y_up=path.lower().endswith((".glb", ".gltf")))
-        except ValueError as e:
-            raise ProviderError(str(e)) from e
+        mesh, steps, _ = clean_in_subprocess(ctx, Path(path), ctx.work_dir / "clean.ply", plane=False,
+                                             y_up=path.lower().endswith((".glb", ".gltf")),
+                                             max_faces=AI_MAX_FACES, band=(85, 96))
         if len(views) == 1:
             used = f"Foto usata: {views['front'].name}"
         else:
             used = "Viste usate: " + ", ".join(f"{VIEW_LABELS[k]} {p.name}" for k, p in views.items())
-        return mesh, [used, *info.steps]
+        return mesh, [used, *steps]

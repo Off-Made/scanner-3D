@@ -312,3 +312,23 @@ def test_cleanup_subprocess_user_error_becomes_provider_error(tmp_path):
     o3d.io.write_point_cloud(str(src), o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.random.rand(50, 3))))
     with pytest.raises(ProviderError, match="troppo povera"):
         clean_in_subprocess(ctx(tmp_path), src, tmp_path / "clean.ply", points=True)
+
+
+def test_ai_mesh_is_reduced_and_cleaned_outside_the_server(tmp_path, monkeypatch):
+    """Il collaudo: Hunyuan restituiva 2,5–3,7 M triangoli e la pulizia nel server lo bloccava."""
+    from app.providers import ai_hf
+    monkeypatch.setattr(ai_hf, "AI_MAX_FACES", 2000)
+
+    class Dense(FakeClient):
+        def predict(self, api_name, **kwargs):
+            self.called = (api_name, kwargs)
+            path = self.out / "gen.glb"
+            trimesh.creation.icosphere(subdivisions=5).export(path)  # 20.480 triangoli
+            return ({"value": str(path)},)
+    p = tmp_path / "001.jpg"
+    Image.fromarray(np.random.default_rng(0).integers(0, 255, (200, 200, 3), dtype=np.uint8)).save(p)
+    c = RunContext(work_dir=tmp_path, report_progress=lambda p, s: None, is_cancelled=lambda: False,
+                   log_file=tmp_path / "pipeline.log")
+    mesh, steps = HuggingFaceProvider(client_factory=lambda *a: Dense(tmp_path)).reconstruct([p], c)
+    assert any("ridotta" in s for s in steps) and mesh.is_watertight
+    assert "Pulizia del modello" in (tmp_path / "pipeline.log").read_text(encoding="utf-8")  # processo separato

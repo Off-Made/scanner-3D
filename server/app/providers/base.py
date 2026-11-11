@@ -102,6 +102,25 @@ class RunContext:
                 p.send_signal(signal.SIGTERM)
 
 
+def clean_in_subprocess(ctx: RunContext, source: Path, out: Path, *, points: bool = False, y_up: bool = False,
+                        plane: bool = True, max_faces: int | None = None, band: tuple[float, float] = (88, 96)):
+    """Pulizia del modello in un processo a parte (app/mesh/cli.py): se esaurisce la memoria muore
+    lui, non il server, e il calcolo non blocca le risposte all'app. -> (mesh, passi, scostamento mm)."""
+    import json
+
+    root = Path(__file__).resolve().parents[2]  # cartella server/
+    args = [*(["--points"] if points else []), *(["--y-up"] if y_up else []), *([] if plane else ["--no-plane"]),
+            *(["--max-faces", str(max_faces)] if max_faces else [])]
+    ctx.run([sys.executable, "-m", "app.mesh.cli", source, out, *args], band=band, step="Pulizia del modello",
+            expected_s=90, cwd=root)
+    meta = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
+    if meta.get("error"):
+        raise ProviderError(meta["error"])
+    mesh = trimesh.load(out, force="mesh")
+    mesh.metadata["fidelity"] = meta["fidelity"]  # per il report: il PLY non conserva i metadati
+    return mesh, meta["steps"], meta.get("deviationMm")
+
+
 class Provider:
     id: str = "base"
     label: str = ""

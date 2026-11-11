@@ -23,7 +23,7 @@ from pathlib import Path
 
 from .. import deps
 from ..config import ROOT
-from .base import Provider, ProviderError, RunContext
+from .base import Provider, ProviderError, RunContext, clean_in_subprocess
 
 IS_WIN = sys.platform == "win32"
 
@@ -104,23 +104,6 @@ def check_registration(registered: int, total: int) -> None:
             f"Solo {registered} foto su {total} sono state collegate tra loro: l'oggetto ha troppo pochi dettagli "
             "riconoscibili (superficie liscia, lucida o in tinta unita). Opacizzalo con talco, appoggialo su un "
             "giornale e rifai le foto con luce diffusa.")
-
-
-def clean_in_subprocess(ctx: RunContext, source: Path, out: Path, points: bool = False):
-    """Pulizia del modello in un processo a parte (app/mesh/cli.py): se esaurisce la memoria muore
-    lui, non il server, e il calcolo non blocca le risposte all'app. -> (mesh, passi, scostamento)."""
-    import json
-
-    import trimesh
-
-    ctx.run([sys.executable, "-m", "app.mesh.cli", source, out, *(["--points"] if points else [])],
-            band=(88, 96), step="Pulizia del modello", expected_s=90, cwd=ROOT / "server")
-    meta = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
-    if meta.get("error"):
-        raise ProviderError(meta["error"])
-    mesh = trimesh.load(out, force="mesh")
-    mesh.metadata["fidelity"] = meta["fidelity"]  # per il report: il PLY non conserva i metadati
-    return mesh, meta["steps"], meta.get("deviationMm")
 
 
 class PhotogrammetryProvider(Provider):

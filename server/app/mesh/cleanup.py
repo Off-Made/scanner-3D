@@ -102,15 +102,16 @@ def find_table(points: np.ndarray, diag: float) -> tuple[np.ndarray, np.ndarray]
 
 # --- strada principale: superficie (mesh) -> solido fedele ------------------------------------
 
-def surface_to_printable(mesh: trimesh.Trimesh, progress: Progress | None = None,
-                         y_up: bool = False, find_plane: bool = True) -> tuple[trimesh.Trimesh, CleanupInfo]:
+def surface_to_printable(mesh: trimesh.Trimesh, progress: Progress | None = None, y_up: bool = False,
+                         find_plane: bool = True, max_input_faces: int | None = None) -> tuple[trimesh.Trimesh, CleanupInfo]:
     """Mesh di superficie (OpenMVS o AI) -> solido chiuso, Z-up, 100 mm, con report di fedeltà."""
     info = CleanupInfo()
-    if len(mesh.faces) > MAX_INPUT_FACES:
-        # una scena intera (oggetto + tavolo + sfondo) da foto del telefono può avere milioni di
-        # triangoli: riduco SUBITO, prima dei passi che occupano memoria in proporzione
+    limit = max_input_faces or MAX_INPUT_FACES
+    if len(mesh.faces) > limit:
+        # una scena intera da foto del telefono, o un modello AI ad alta risoluzione, può avere
+        # milioni di triangoli: riduco SUBITO, prima dei passi che occupano memoria in proporzione
         n0 = len(mesh.faces)
-        mesh = _decimate(mesh, MAX_INPUT_FACES)
+        mesh = _decimate(mesh, limit)
         info.log(f"Superficie ridotta da {n0:,} a {len(mesh.faces):,} triangoli per stare nella memoria", progress)
     mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, process=True)
     if y_up:  # glTF è Y-up: ruoto per avere Z-up come gli slicer
@@ -513,8 +514,11 @@ def _decimate(mesh: trimesh.Trimesh, faces: int) -> trimesh.Trimesh:
     try:
         import fast_simplification as fs
 
-        v, f = fs.simplify(np.asarray(mesh.vertices, dtype=np.float32), np.asarray(mesh.faces, dtype=np.int32),
-                           target_count=int(faces))
+        v, f = np.asarray(mesh.vertices, dtype=np.float32), np.asarray(mesh.faces, dtype=np.int32)
+        for _ in range(4):  # su mesh "sporche" una passata si ferma prima dell'obiettivo: ripeto
+            v, f = fs.simplify(v, f, target_count=int(faces))
+            if len(f) <= faces * 1.1:
+                break
         return trimesh.Trimesh(v, f, process=True)
     except ImportError:
         import open3d as o3d

@@ -7,6 +7,7 @@ Così muore al massimo questo processo e l'app riceve un messaggio chiaro.
 Uso (dalla cartella server/):
     .venv/bin/python -m app.mesh.cli INPUT.ply OUTPUT.ply            # INPUT = mesh (OpenMVS)
     .venv/bin/python -m app.mesh.cli INPUT.ply OUTPUT.ply --points   # INPUT = nuvola di punti
+    .venv/bin/python -m app.mesh.cli MODELLO.glb OUTPUT.ply --y-up --no-plane --max-faces 400000   # AI
 
 Scrive OUTPUT (mesh pulita) e OUTPUT.json ({"steps", "fidelity", "deviationMm"} oppure {"error"});
 stampa ogni passo e il picco di RAM (utile per la diagnosi).
@@ -35,6 +36,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("input")
     ap.add_argument("output")
     ap.add_argument("--points", action="store_true", help="l'ingresso è una nuvola di punti, non una mesh")
+    ap.add_argument("--y-up", action="store_true", help="mesh glTF (Y verso l'alto), come quelle dell'AI")
+    ap.add_argument("--no-plane", action="store_true", help="non cercare il tavolo (mesh AI: c'è solo l'oggetto)")
+    ap.add_argument("--max-faces", type=int, default=None, help="riduci subito la mesh a questi triangoli")
     a = ap.parse_args(argv)
     out, meta = Path(a.output), Path(a.output + ".json")
 
@@ -51,7 +55,8 @@ def main(argv: list[str] | None = None) -> int:
 
             loaded = trimesh.load(a.input, force="mesh")
             say(f"Mesh letta: {len(loaded.faces):,} triangoli (RAM {peak_gb():.1f} GB)")
-            mesh, info = surface_to_printable(loaded, progress=say)
+            mesh, info = surface_to_printable(loaded, progress=say, y_up=a.y_up, find_plane=not a.no_plane,
+                                              max_input_faces=a.max_faces)
     except ValueError as e:  # messaggi pensati per l'utente (es. "non riesco a isolare l'oggetto")
         meta.write_text(json.dumps({"error": str(e)}, ensure_ascii=False), encoding="utf-8")
         say(f"Errore: {e}")
