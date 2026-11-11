@@ -10,7 +10,8 @@ Lo Space e l'endpoint sono configurabili (HF_SPACE, HF_API_NAME) perché gli Spa
 cambiano nel tempo: l'adattatore legge la descrizione dell'API e associa le foto ai parametri
 per nome (mv_image_front, ...), oppure al primo parametro immagine se lo Space ne ha uno solo.
 HF_MV_SWAP_LR=1 scambia sinistra/destra se il modello esce "specchiato".
-HF_OCTREE_RESOLUTION (predefinito 380, 0 = lascia il valore dello Space): più alto = più dettagli.
+HF_OCTREE_RESOLUTION (predefinito 0 = valore dello Space, 256): più alto = molti più triangoli
+(380 dava 3,7 M triangoli) per pochissimo dettaglio in più.
 
 Limiti onesti: le zone che nessuna foto vede sono comunque stimate, le quote gratuite sono
 limitate e lo Space può cambiare API o sparire.
@@ -147,7 +148,7 @@ class HuggingFaceProvider(Provider):
         self.api_name = os.getenv("HF_API_NAME", "/shape_generation")
         self.token = os.getenv("HF_TOKEN") or None
         self.swap_lr = os.getenv("HF_MV_SWAP_LR", "0") == "1"
-        octree = int(os.getenv("HF_OCTREE_RESOLUTION", "380") or 0)
+        octree = int(os.getenv("HF_OCTREE_RESOLUTION", "0") or 0)
         self.overrides = {"octree_resolution": octree, "check_box_rembg": True} if octree else {"check_box_rembg": True}
         self._client_factory = client_factory  # iniettabile nei test
 
@@ -188,6 +189,12 @@ class HuggingFaceProvider(Provider):
         path = find_mesh_file(result)
         if not path:
             raise ProviderError("Il servizio AI non ha restituito un modello 3D.")
+        try:  # copia del modello ricevuto: se la pulizia fallisce si può analizzare il file vero
+            import shutil
+
+            shutil.copy(path, ctx.work_dir / ("ai_result" + Path(path).suffix.lower()))
+        except OSError:
+            pass
         mesh, steps, _ = clean_in_subprocess(ctx, Path(path), ctx.work_dir / "clean.ply", plane=False,
                                              y_up=path.lower().endswith((".glb", ".gltf")),
                                              max_faces=AI_MAX_FACES, band=(85, 96))

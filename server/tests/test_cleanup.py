@@ -171,3 +171,15 @@ def test_huge_input_is_reduced_first(monkeypatch):
     mesh, info = C.surface_to_printable(scene_mesh())
     assert any("ridotta" in s for s in info.steps)
     assert mesh.is_watertight
+
+
+def test_decimation_still_reduces_when_quadric_gets_stuck(monkeypatch):
+    """Visto con i modelli AI: la semplificazione si fermava a metà. Il ripiego deve ridurre comunque."""
+    import fast_simplification as fs
+    from app.mesh.cleanup import _decimate
+    monkeypatch.setattr(fs, "simplify", lambda v, f, target_count: (v, f))  # semplificazione "bloccata"
+    s = trimesh.creation.icosphere(6, radius=50)  # 81.920 triangoli
+    out = _decimate(s, 8000)
+    assert len(out.faces) < 8000 * 1.5 * 2  # il clustering riduce di un ordine di grandezza
+    assert len(out.faces) < len(s.faces) / 4
+    assert out.extents == pytest.approx(s.extents, rel=0.05)  # la forma resta quella

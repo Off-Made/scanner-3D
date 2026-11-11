@@ -75,7 +75,8 @@ class RunContext:
             if self._proc.returncode != 0:
                 rc = self._proc.returncode
                 why = {-6: " — il programma si è interrotto da solo (SIGABRT)",
-                       -9: " — terminato dal sistema, probabilmente memoria esaurita (prova con meno foto)"}.get(rc, "")
+                       -9: " — terminato dal sistema, probabilmente memoria esaurita (prova con meno foto)",
+                       -15: " — fermato dall'esterno, di solito per memoria quasi esaurita"}.get(rc, "")
                 tail = self._log_tail()
                 raise ProviderError(f"Il passo “{step}” è fallito (codice {rc}{why})." + (f" Ultime righe: {tail}" if tail else ""))
         finally:

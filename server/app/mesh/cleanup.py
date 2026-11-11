@@ -510,22 +510,43 @@ def finalize(mesh: trimesh.Trimesh, info: CleanupInfo, progress: Progress | None
 
 def _decimate(mesh: trimesh.Trimesh, faces: int) -> trimesh.Trimesh:
     """Semplificazione quadrica: toglie triangoli dove la superficie è piatta, li tiene sui dettagli.
-    fast_simplification impiega meno di un secondo dove Open3D impiegava minuti (1,5 M triangoli)."""
-    try:
-        import fast_simplification as fs
 
-        v, f = np.asarray(mesh.vertices, dtype=np.float32), np.asarray(mesh.faces, dtype=np.int32)
-        for _ in range(4):  # su mesh "sporche" una passata si ferma prima dell'obiettivo: ripeto
-            v, f = fs.simplify(v, f, target_count=int(faces))
-            if len(f) <= faces * 1.1:
+    Su alcune mesh (visto con i modelli AI: 3,7 M -> si ferma a ~2 M, qualunque obiettivo) la
+    semplificazione si blocca a metà. Allora: unisco i vertici coincidenti e riprovo; se ancora non
+    basta, raggruppo i vertici su una griglia (vertex clustering: meno fine, ma riduce sempre)."""
+    target = int(faces)
+    v, f = np.asarray(mesh.vertices, dtype=np.float32), np.asarray(mesh.faces, dtype=np.int32)
+
+    def quadric(v, f):
+        try:
+            import fast_simplification as fs
+        except ImportError:  # ripiego: Open3D (lento sulle mesh grandi)
+            import open3d as o3d
+
+            m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(v), o3d.utility.Vector3iVector(f))
+            m = m.simplify_quadric_decimation(target)
+            return np.asarray(m.vertices, dtype=np.float32), np.asarray(m.triangles, dtype=np.int32)
+        for _ in range(3):
+            n = len(f)
+            v, f = fs.simplify(v, f, target_count=target)
+            if len(f) <= target * 1.1 or len(f) >= n * 0.98:  # arrivato, oppure non scende più
                 break
-        return trimesh.Trimesh(v, f, process=True)
-    except ImportError:
+        return v, f
+
+    v, f = quadric(v, f)
+    if len(f) > target * 1.5:
+        m = trimesh.Trimesh(v, f, process=False)
+        m.merge_vertices(merge_tex=True, merge_norm=True)  # vertici uguali ma separati (cuciture UV/normali)
+        v, f = quadric(np.asarray(m.vertices, dtype=np.float32), np.asarray(m.faces, dtype=np.int32))
+    if len(f) > target * 1.5:
         import open3d as o3d
 
-        m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(mesh.vertices), o3d.utility.Vector3iVector(mesh.faces))
-        m = m.simplify_quadric_decimation(int(faces))
-        return trimesh.Trimesh(np.asarray(m.vertices), np.asarray(m.triangles), process=True)
+        m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(v.astype(np.float64)), o3d.utility.Vector3iVector(f))
+        area = float(m.get_surface_area())
+        voxel = np.sqrt(2.0 * area / target) * 0.7  # cella ~ lato medio dei triangoli all'obiettivo
+        m = m.simplify_vertex_clustering(voxel)
+        v, f = quadric(np.asarray(m.vertices, dtype=np.float32), np.asarray(m.triangles, dtype=np.int32))
+    return trimesh.Trimesh(v, f, process=True)
 
 
 def _to_manifold(mesh: trimesh.Trimesh):
