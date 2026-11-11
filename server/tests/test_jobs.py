@@ -1,3 +1,4 @@
+import json
 import io
 from pathlib import Path
 import time
@@ -136,3 +137,16 @@ def test_relative_data_dir_is_made_absolute(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     jm = JobManager(Path("rel-data"), {"mock": MockProvider(0.1)})
     assert jm.dir.is_absolute() and jm.dir == (tmp_path / "rel-data" / "jobs").resolve()
+
+
+def test_photo_view_angles_are_stored_outside_the_photo_folder(client, tmp_path):
+    job = client.post("/api/jobs", json={"provider": "mock"}).json()
+    client.post(f"/api/jobs/{job['id']}/photos", files={"photo": ("a.jpg", jpeg(800, 600), "image/jpeg")},
+                data={"angle": "-90", "ring": "1"})
+    client.post(f"/api/jobs/{job['id']}/photos", files={"photo": ("b.jpg", jpeg(800, 600), "image/jpeg")})
+    client.post(f"/api/jobs/{job['id']}/photos", files={"photo": ("c.jpg", jpeg(800, 600), "image/jpeg")},
+                data={"angle": "nan"})
+    d = tmp_path / "jobs" / job["id"]
+    views = json.loads((d / "views.json").read_text())
+    assert views == {"001.jpg": {"angle": 270.0, "ring": 1}}  # senza angolo o con angolo non valido: nessuna vista
+    assert [p.name for p in (d / "photos").iterdir()] == ["001.jpg", "002.jpg", "003.jpg"]

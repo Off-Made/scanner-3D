@@ -185,3 +185,76 @@ def test_openmvs_mesh_fallback_chain(monkeypatch, tmp_path, fail, refine_present
     assert any(note in n for n in notes)
     if "ReconstructMesh" in fail:
         assert "RefineMesh" not in fake.calls  # niente affinamento senza superficie
+
+
+# --- AI multi-vista ---------------------------------------------------------------------------
+
+from app.providers.ai_hf import pick_views  # noqa: E402
+
+API_MV = {"named_endpoints": {"/shape_generation": {"parameters": [
+    {"parameter_name": "caption", "component": "Textbox", "parameter_has_default": False},
+    {"parameter_name": "image", "component": "Image", "parameter_has_default": True},
+    *({"parameter_name": f"mv_image_{v}", "component": "Image", "parameter_has_default": True}
+      for v in ("front", "back", "left", "right")),
+    {"parameter_name": "steps", "component": "Slider", "parameter_has_default": True},
+    {"parameter_name": "octree_resolution", "component": "Slider", "parameter_has_default": True},
+]}}}
+
+
+def test_build_kwargs_maps_views_and_known_overrides():
+    kw = build_kwargs(API_MV, "/shape_generation", {"front": "F", "back": "B", "right": "R"},
+                      {"octree_resolution": 380, "parametro_inesistente": 1})
+    assert kw == {"caption": None, "mv_image_front": "F", "mv_image_back": "B", "mv_image_right": "R",
+                  "octree_resolution": 380}
+    # endpoint a foto singola: la vista frontale va nel parametro immagine
+    assert build_kwargs(API, "/shape_generation", {"front": "F", "back": "B"}) == {"caption": None, "image": "F"}
+
+
+def fake_photos(n):
+    return [Path(f"{i + 1:03d}.jpg") for i in range(n)]
+
+
+def test_pick_views_from_compass_angles():
+    photos = fake_photos(12)
+    views = {p.name: {"angle": i * 30.0, "ring": 0} for i, p in enumerate(photos)}
+    v = pick_views(photos, views, sharp=lambda p: 1.0)
+    assert {k: p.name for k, p in v.items()} == {"front": "001.jpg", "right": "004.jpg", "back": "007.jpg", "left": "010.jpg"}
+    v = pick_views(photos, views, sharp=lambda p: 1.0, swap_lr=True)
+    assert v["left"].name == "004.jpg" and v["right"].name == "010.jpg"
+
+
+def test_pick_views_prefers_side_ring_and_sharp_photos():
+    photos = fake_photos(4)
+    views = {"001.jpg": {"angle": 0, "ring": 0}, "002.jpg": {"angle": 92, "ring": 1},
+             "003.jpg": {"angle": 80, "ring": 0}, "004.jpg": {"angle": 100, "ring": 0}}
+    sharp = {"003.jpg": 1.0, "004.jpg": 5.0}
+    v = pick_views(photos, views, sharp=lambda p: sharp.get(p.name, 1.0))
+    assert v["right"].name == "004.jpg"  # stesso anello dell'oggetto, la più nitida entro ±30°
+    assert "back" not in v and "left" not in v  # angoli non coperti: meglio niente che una vista sbagliata
+
+
+def test_pick_views_without_compass_uses_only_front_and_back():
+    v = pick_views(fake_photos(12), {}, sharp=lambda p: 1.0)
+    assert {k: p.name for k, p in v.items()} == {"front": "001.jpg", "back": "007.jpg"}
+    assert set(pick_views(fake_photos(2), {}, sharp=lambda p: 1.0)) == {"front"}
+
+
+def test_hf_provider_multiview_with_fake_client(tmp_path):
+    photos = []
+    for i in range(8):
+        p = tmp_path / f"{i + 1:03d}.jpg"
+        Image.fromarray(np.random.default_rng(i).integers(0, 255, (200, 200, 3), dtype=np.uint8)).save(p)
+        photos.append(p)
+
+    class MV(FakeClient):
+        def view_api(self, **_):
+            return API_MV
+    fake = MV(tmp_path)
+    c = ctx(tmp_path)
+    c.photo_views = {p.name: {"angle": i * 45.0, "ring": 0} for i, p in enumerate(photos)}
+    mesh, steps = HuggingFaceProvider(client_factory=lambda *a: fake).reconstruct(photos, c)
+    kw = fake.called[1]
+    assert {"mv_image_front", "mv_image_back", "mv_image_left", "mv_image_right"} <= set(kw)
+    assert "image" not in kw
+    assert steps[0].startswith("Viste usate:") and "fronte 001.jpg" in steps[0]
+    assert mesh.is_watertight

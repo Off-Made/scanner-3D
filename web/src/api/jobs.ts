@@ -1,6 +1,7 @@
 // API dei job di ricostruzione + orchestrazione: upload foto, avvio, polling, download del modello.
 import { api, apiBlob, ApiError } from './client'
 import { db, updateScan, type PrintReport, type Scan } from '../db/scans'
+import type { PhotoView } from '../scan/coverage'
 
 export interface ProviderInfo {
   id: string; label: string; description: string; minPhotos: number; maxPhotos: number; available: boolean; reason: string
@@ -16,10 +17,14 @@ export const getProviders = () => api<ProviderInfo[]>('/api/providers')
 export const getJob = (id: string) => api<JobInfo>(`/api/jobs/${id}`)
 export const deleteJob = (id: string) => api<{ ok: boolean }>(`/api/jobs/${id}`, { method: 'DELETE' })
 
-async function uploadWithRetry(jobId: string, blob: Blob, i: number) {
+async function uploadWithRetry(jobId: string, blob: Blob, i: number, view?: PhotoView) {
   for (let attempt = 1; ; attempt++) {
     const fd = new FormData()
     fd.append('photo', blob, `foto-${String(i + 1).padStart(2, '0')}.jpg`)
+    if (view) {
+      fd.append('angle', view.angle.toFixed(1))
+      fd.append('ring', String(view.ring))
+    }
     try {
       return await api<{ photos: number }>(`/api/jobs/${jobId}/photos`, { method: 'POST', body: fd })
     } catch (e) {
@@ -31,11 +36,12 @@ async function uploadWithRetry(jobId: string, blob: Blob, i: number) {
 }
 
 /** Crea il job, carica le foto una alla volta (con avanzamento) e avvia l'elaborazione. */
-export async function submitScan(scan: Scan, photos: Blob[], onProgress: (sent: number) => void): Promise<string> {
+export async function submitScan(scan: Scan, photos: Blob[], onProgress: (sent: number) => void,
+                                 views: (PhotoView | undefined)[] = []): Promise<string> {
   const job = await api<JobInfo>('/api/jobs', { method: 'POST', body: JSON.stringify({ provider: scan.provider, name: scan.name }) })
   await updateScan(scan.id, { jobId: job.id })
   for (let i = 0; i < photos.length; i++) {
-    await uploadWithRetry(job.id, photos[i], i)
+    await uploadWithRetry(job.id, photos[i], i, views[i])
     onProgress(i + 1)
     await updateScan(scan.id, { progress: Math.round(((i + 1) / photos.length) * 100), step: `Invio foto ${i + 1}/${photos.length}` })
   }

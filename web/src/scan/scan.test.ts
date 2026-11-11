@@ -66,3 +66,13 @@ describe('immagini', () => {
     expect(fitSize(640, 480)).toEqual({ width: 640, height: 480 })
   })
 })
+
+describe('vista di ogni foto (per il motore AI multi-vista)', () => {
+  it('angolo relativo al primo scatto, in senso orario, e anello', () => {
+    const c = new Coverage()
+    c.mark(350, 90)
+    expect(c.viewOf(350, 90)).toEqual({ angle: 0, ring: 0 })
+    expect(c.viewOf(80, 90)).toEqual({ angle: 90, ring: 0 })   // 350 -> 80 = +90 (passa per lo 0)
+    expect(c.viewOf(260, 40)).toEqual({ angle: 270, ring: 1 }) // dall'alto
+  })
+})

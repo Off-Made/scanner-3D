@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Camera, Images, Sparkles, Trash2, Zap, ZapOff } from 'lucide-react'
 import { captureFrame, describeCameraError, detectBrowser, detectPlatform, requestOrientationPermission, startRearCamera, stopStream, type CameraProblem } from '../scan/camera'
-import { Coverage, MAX_PHOTOS, RINGS } from '../scan/coverage'
+import { Coverage, MAX_PHOTOS, RINGS, type PhotoView } from '../scan/coverage'
 import { lightIssue, measure, SharpnessJudge } from '../scan/quality'
 import { resizeImageFile, subsample } from '../scan/images'
 import { startSubmission } from '../scan/submit'
@@ -9,7 +9,7 @@ import { getProviders, type ProviderInfo } from '../api/jobs'
 import { defaultName } from '../db/scans'
 import { Header, Segmented } from '../ui/components'
 
-interface Shot { blob: Blob; url: string }
+interface Shot { blob: Blob; url: string; view?: PhotoView }
 interface Orientation { heading: number | null; beta: number | null; t: number }
 
 function CoverageRing({ cov, photos, size = 92 }: { cov: Coverage; photos: number; size?: number }) {
@@ -71,8 +71,8 @@ export function ScanScreen({ go }: { go: (hash: string) => void }) {
   }, [])
   useEffect(() => () => shots.forEach(s => URL.revokeObjectURL(s.url)), []) // eslint-disable-line
 
-  const addShot = useCallback((blob: Blob) => {
-    setShots(prev => prev.length >= MAX_PHOTOS ? prev : [...prev, { blob, url: URL.createObjectURL(blob) }])
+  const addShot = useCallback((blob: Blob, view?: PhotoView) => {
+    setShots(prev => prev.length >= MAX_PHOTOS ? prev : [...prev, { blob, url: URL.createObjectURL(blob), view }])
   }, [])
 
   const shoot = useCallback(async () => {
@@ -82,7 +82,8 @@ export function ScanScreen({ go }: { go: (hash: string) => void }) {
       const blob = await captureFrame(videoRef.current) // risoluzione piena del video (fino a 1920×1440)
       const o = orient.current
       cov.mark(o.heading ?? shots.length * 15, o.beta) // senza giroscopio: stima dal numero di foto
-      addShot(blob)
+      // l'angolo vero lo mando solo se c'è la bussola: una stima sbagliata darebbe all'AI viste sbagliate
+      addShot(blob, o.heading != null ? cov.viewOf(o.heading, o.beta) : undefined)
       lastShot.current = performance.now()
       setFlash(f => f + 1)
       navigator.vibrate?.(12)
@@ -165,7 +166,7 @@ export function ScanScreen({ go }: { go: (hash: string) => void }) {
     setSubmitting(true); setError(null)
     try {
       stopStream(streamRef.current)
-      const id = await startSubmission(defaultName(), provider, shots.map(s => s.blob))
+      const id = await startSubmission(defaultName(), provider, shots.map(s => s.blob), shots.map(s => s.view))
       go(`/scan/${id}`)
     } catch (e) {
       setError((e as Error).message); setSubmitting(false)
@@ -238,9 +239,21 @@ export function ScanScreen({ go }: { go: (hash: string) => void }) {
         {submitting ? 'Invio…' : shots.length < minPhotos ? `Servono almeno ${minPhotos} foto (${shots.length})` : `Elabora ${shots.length} foto`}
       </button>
       {provider === 'ai'
-        ? <p className="muted" style={{ margin: 0 }}>Consigli: una foto frontale e nitida, oggetto intero e al centro, sfondo uniforme e luce diffusa. La parte che non si vede viene “immaginata”.</p>
-        : <p className="muted" style={{ margin: 0 }}>Consigli: appoggia l’oggetto su un foglio di giornale o una tovaglia a disegni (aiutano a calcolare le posizioni), luce diffusa senza riflessi, 30–40 foto girando due volte: all’altezza dell’oggetto e dall’alto.
-          Oggetti <strong>lucidi, bianchi lisci o trasparenti</strong> (custodie, bottiglie, vetro) vengono male: opacizzali con talco, borotalco spray o nastro di carta con qualche segno di pennarello.</p>}
+        ? <p className="muted" style={{ margin: 0 }}>Consigli: la <strong>prima foto è il fronte</strong> dell’oggetto. Poi gira tutto attorno all’altezza dell’oggetto:
+          l’app sceglie da sola fronte, retro e fianchi (servono la bussola e almeno 8 foto). Oggetto intero e al centro, sfondo uniforme, luce diffusa.
+          Le parti che nessuna foto vede vengono comunque stimate.</p>
+        : <>
+          <p className="muted" style={{ margin: 0 }}>Consigli: appoggia l’oggetto su un foglio di giornale o una tovaglia a disegni (aiutano a calcolare le posizioni), luce diffusa senza riflessi, 30–40 foto girando due volte: all’altezza dell’oggetto e dall’alto.</p>
+          <details className="muted">
+            <summary>Oggetti difficili: piccoli, con dettagli fini, lucidi o in tinta unita</summary>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              <li><strong>Lucidi o in tinta unita</strong> (plastica liscia, metallo, ceramica, oggetti bianchi): opacizzali con talco, borotalco spray o shampoo secco; su superfici lisce aggiungi qualche pezzetto di nastro di carta con segni di pennarello. Il <strong>trasparente</strong> (vetro) non si può ricostruire.</li>
+              <li><strong>Piccoli</strong> (meno di 10 cm): avvicinati finché l’oggetto riempie metà inquadratura, ma resta a fuoco; tieni sempre un po’ di giornale visibile attorno.</li>
+              <li><strong>Dettagli fini</strong> (fessure, scritte, parti sottili): dopo i due giri aggiungi 5–8 foto ravvicinate su quei punti, da angolazioni leggermente diverse.</li>
+              <li>Mai il flash, mai controluce: meglio vicino a una finestra con il cielo coperto.</li>
+            </ul>
+          </details>
+        </>}
     </section>
   )
 }

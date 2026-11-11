@@ -66,6 +66,16 @@ class JobManager:
     def photos_dir(self, job_id: str) -> Path:
         return self.job_dir(job_id) / "photos"
 
+    def views_path(self, job_id: str) -> Path:
+        # fuori da photos/: COLMAP legge ogni file di quella cartella come immagine
+        return self.job_dir(job_id) / "views.json"
+
+    def load_views(self, job_id: str) -> dict:
+        try:
+            return json.loads(self.views_path(job_id).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
     def model_path(self, job_id: str) -> Path:
         return self.job_dir(job_id) / "model.glb"
 
@@ -118,8 +128,12 @@ class JobManager:
                 job.queue_position = self._order.index(job_id) + 1 if job_id in self._order else 0
             return job
 
-    def add_photo(self, job: Job) -> int:
+    def add_photo(self, job: Job, filename: str | None = None, view: dict | None = None) -> int:
         with self._lock:
+            if filename and view:
+                views = self.load_views(job.id)
+                views[filename] = view
+                self.views_path(job.id).write_text(json.dumps(views), encoding="utf-8")
             job.photos = len(list(self.photos_dir(job.id).glob("*.jpg")))
             job.step = f"{job.photos} foto ricevute"
             self._save(job)
@@ -178,7 +192,8 @@ class JobManager:
                     self._save(job)
 
         ctx = RunContext(work_dir=work, report_progress=report,
-                         is_cancelled=lambda: job.id in self._cancel, log_file=work / "pipeline.log")
+                         is_cancelled=lambda: job.id in self._cancel, log_file=work / "pipeline.log",
+                         photo_views=self.load_views(job.id))
         with self._lock:
             job.status, job.started = "running", time.time()
             self._save(job)

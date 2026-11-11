@@ -20,6 +20,9 @@ export function sectorFor(heading: number, sectors: number): number {
   return Math.floor(h / (360 / sectors)) % sectors
 }
 
+/** Da dove è stata scattata una foto: angolo attorno all'oggetto (0 = primo scatto, cresce in senso orario) e anello. */
+export interface PhotoView { angle: number; ring: 0 | 1 }
+
 export class Coverage {
   readonly filled: boolean[][] = RINGS.map(r => Array(r.sectors).fill(false))
   private origin: number | null = null // il primo scatto definisce lo "zero" dell'anello
@@ -29,6 +32,12 @@ export class Coverage {
     const ring = ringFor(beta)
     const rel = this.origin == null ? 0 : heading - this.origin
     return { ring, sector: sectorFor(rel, RINGS[ring].sectors) }
+  }
+
+  /** Vista della foto appena segnata con mark(): serve al motore AI per scegliere fronte/retro/fianchi. */
+  viewOf(heading: number, beta: number | null): PhotoView {
+    const rel = this.origin == null ? 0 : heading - this.origin
+    return { angle: ((rel % 360) + 360) % 360, ring: ringFor(beta) }
   }
 
   isNew(heading: number, beta: number | null): boolean {
@@ -51,6 +60,6 @@ export class Coverage {
     if (photos >= MAX_PHOTOS) return 'Hai raggiunto il massimo di foto: puoi elaborare'
     if (this.ratio(0) < 0.75) return 'Ruota lentamente attorno all’oggetto, tenendolo al centro'
     if (this.ratio(1) < 0.5) return 'Ora fai un giro più in alto, guardando l’oggetto dall’alto'
-    return 'Ottima copertura: puoi elaborare o aggiungere dettagli'
+    return 'Ottima copertura: puoi elaborare, o avvicinarti ai dettagli fini per qualche foto in più'
   }
 }

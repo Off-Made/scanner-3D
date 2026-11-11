@@ -3,13 +3,14 @@
 import { db, newScan, updateScan } from '../db/scans'
 import { submitScan } from '../api/jobs'
 import { ApiError } from '../api/client'
+import type { PhotoView } from './coverage'
 
 const running = new Map<string, Promise<void>>()
 
-export async function startSubmission(name: string, provider: string, photos: Blob[]): Promise<string> {
+export async function startSubmission(name: string, provider: string, photos: Blob[], views: (PhotoView | undefined)[] = []): Promise<string> {
   const scan = newScan(name, provider, photos.length)
   await db.scans.add(scan)
-  const task = submitScan(scan, photos, () => {}).then(
+  const task = submitScan(scan, photos, () => {}, views).then(
     () => {},
     async e => {
       await updateScan(scan.id, { status: 'error', error: e instanceof ApiError ? e.message : 'Invio delle foto non riuscito.' })

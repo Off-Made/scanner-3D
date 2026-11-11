@@ -32,6 +32,9 @@ class RunContext:
     report_progress: Callable[[float, str], None]
     is_cancelled: Callable[[], bool]
     log_file: Path | None = None
+    # da dove è stata scattata ogni foto (nome file -> {"angle": gradi dal primo scatto, "ring": 0|1}),
+    # se il telefono aveva la bussola; vuoto per le foto importate dalla galleria
+    photo_views: dict = field(default_factory=dict)
     _proc: subprocess.Popen | None = field(default=None, repr=False)
 
     def progress(self, pct: float, step: str) -> None:

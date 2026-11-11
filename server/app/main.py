@@ -5,9 +5,10 @@ oppure:  server\\.venv\\Scripts\\python -m uvicorn app.main:app --app-dir server
 """
 from __future__ import annotations
 
+import math
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -113,18 +114,23 @@ def create_app(settings: Settings | None = None, providers: dict[str, Provider] 
             raise HTTPException(400, f"Motore di ricostruzione sconosciuto: {body.provider}")
 
     @app.post("/api/jobs/{job_id}/photos")
-    def upload_photo(job_id: str, photo: UploadFile = File(...)):
+    def upload_photo(job_id: str, photo: UploadFile = File(...), angle: float | None = Form(None),
+                     ring: int | None = Form(None)):
+        """`angle`/`ring` (facoltativi): da dove è stata scattata la foto, dalla bussola del telefono."""
         job = _job_or_404(job_id)
         if job.status != "uploading":
             raise HTTPException(409, "Elaborazione già avviata: non si possono aggiungere foto.")
         prov = jobs.providers[job.provider]
         if job.photos >= prov.max_photos:
             raise HTTPException(400, f"Massimo {prov.max_photos} foto per scansione.")
+        name = f"{job.photos + 1:03d}.jpg"
         try:
-            save_normalized(photo.file.read(), jobs.photos_dir(job.id) / f"{job.photos + 1:03d}.jpg")
+            save_normalized(photo.file.read(), jobs.photos_dir(job.id) / name)
         except BadImage as e:
             raise HTTPException(400, str(e))
-        return {"photos": jobs.add_photo(job)}
+        ok = angle is not None and math.isfinite(angle)
+        view = {"angle": float(angle) % 360, "ring": 1 if ring == 1 else 0} if ok else None
+        return {"photos": jobs.add_photo(job, name, view)}
 
     @app.post("/api/jobs/{job_id}/start")
     def start_job(job_id: str):
