@@ -289,3 +289,26 @@ def test_unreliable_model_is_flagged_in_report():
     m.metadata["fidelity"] = {"filledPct": 0.0, "baseAdded": False, "deviationMm": 13.4, "method": "x"}
     check = next(c for c in printability(m)["checks"] if c["id"] == "fidelity")
     assert not check["ok"] and "non è affidabile" in check["hint"]
+
+
+def test_cleanup_runs_in_separate_process(tmp_path):
+    """La pulizia gira fuori dal server: se esaurisce la memoria muore lei, non l'API."""
+    from test_cleanup import scene_mesh
+    from app.providers.photogrammetry import clean_in_subprocess
+    src = tmp_path / "scene_dense_mesh.ply"
+    scene_mesh().export(src)
+    c = RunContext(work_dir=tmp_path, report_progress=lambda p, s: None, is_cancelled=lambda: False,
+                   log_file=tmp_path / "pipeline.log")
+    mesh, steps, deviation = clean_in_subprocess(c, src, tmp_path / "clean.ply")
+    assert mesh.is_watertight and max(mesh.extents) == pytest.approx(100, abs=0.5)
+    assert mesh.metadata["fidelity"]["baseAdded"] and deviation is not None
+    assert "RAM di picco" in (tmp_path / "pipeline.log").read_text(encoding="utf-8")
+
+
+def test_cleanup_subprocess_user_error_becomes_provider_error(tmp_path):
+    from app.providers.photogrammetry import clean_in_subprocess
+    src = tmp_path / "tiny.ply"
+    import open3d as o3d
+    o3d.io.write_point_cloud(str(src), o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.random.rand(50, 3))))
+    with pytest.raises(ProviderError, match="troppo povera"):
+        clean_in_subprocess(ctx(tmp_path), src, tmp_path / "clean.ply", points=True)

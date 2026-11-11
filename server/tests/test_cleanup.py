@@ -163,3 +163,11 @@ def test_surface_to_printable_upright_closed_and_faithful():
     assert not mesh.contains([[0, 0, mesh.extents[2] - 8 * s]])[0]
     assert rep["volumeMm3"] == pytest.approx((40**3 - 4 * 40 * 20) * s**3, rel=0.04)
     assert rep["fidelity"]["filledPct"] < 20
+
+
+def test_huge_input_is_reduced_first(monkeypatch):
+    from app.mesh import cleanup as C
+    monkeypatch.setattr(C, "MAX_INPUT_FACES", 5000)
+    mesh, info = C.surface_to_printable(scene_mesh())
+    assert any("ridotta" in s for s in info.steps)
+    assert mesh.is_watertight

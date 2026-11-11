@@ -23,7 +23,6 @@ from pathlib import Path
 
 from .. import deps
 from ..config import ROOT
-from ..mesh.cleanup import points_to_mesh, surface_to_printable
 from .base import Provider, ProviderError, RunContext
 
 IS_WIN = sys.platform == "win32"
@@ -107,6 +106,23 @@ def check_registration(registered: int, total: int) -> None:
             "giornale e rifai le foto con luce diffusa.")
 
 
+def clean_in_subprocess(ctx: RunContext, source: Path, out: Path, points: bool = False):
+    """Pulizia del modello in un processo a parte (app/mesh/cli.py): se esaurisce la memoria muore
+    lui, non il server, e il calcolo non blocca le risposte all'app. -> (mesh, passi, scostamento)."""
+    import json
+
+    import trimesh
+
+    ctx.run([sys.executable, "-m", "app.mesh.cli", source, out, *(["--points"] if points else [])],
+            band=(88, 96), step="Pulizia del modello", expected_s=90, cwd=ROOT / "server")
+    meta = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
+    if meta.get("error"):
+        raise ProviderError(meta["error"])
+    mesh = trimesh.load(out, force="mesh")
+    mesh.metadata["fidelity"] = meta["fidelity"]  # per il report: il PLY non conserva i metadati
+    return mesh, meta["steps"], meta.get("deviationMm")
+
+
 class PhotogrammetryProvider(Provider):
     id = "photo"
     label = "Precisa (foto)"
@@ -182,21 +198,12 @@ class PhotogrammetryProvider(Provider):
             raise ProviderError("La ricostruzione densa non ha prodotto punti. Riprova con più luce e foto più nitide.")
 
         surface, notes = self.mesh_from_dense(ctx, w, common, omvs_env, n)
-        ctx.progress(88, "Pulizia del modello")
-        try:
-            if surface is not None:
-                import trimesh
-
-                mesh, info = surface_to_printable(trimesh.load(surface, force="mesh"), progress=lambda m: ctx.progress(92, m))
-            else:
-                mesh, info = points_to_mesh(str(ply), progress=lambda m: ctx.progress(92, m))
-        except ValueError as e:
-            raise ProviderError(str(e)) from e
-        if info.deviation_mm is not None and info.deviation_mm > MAX_DEVIATION_MM:
+        mesh, steps, deviation = clean_in_subprocess(ctx, surface or ply, w / "clean.ply", points=surface is None)
+        if deviation is not None and deviation > MAX_DEVIATION_MM:
             raise ProviderError(
-                f"La ricostruzione è incompleta (il modello si scosta di {info.deviation_mm:.0f} mm dalla scansione): "
+                f"La ricostruzione è incompleta (il modello si scosta di {deviation:.0f} mm dalla scansione): "
                 "servono più foto ben sovrapposte, con più dettagli visibili sull'oggetto e sul piano d'appoggio.")
-        return mesh, [f"Foto collegate: {registered_images(model)} su {n}", *notes, *info.steps]
+        return mesh, [f"Foto collegate: {registered_images(model)} su {n}", *notes, *steps]
 
     def mesh_from_dense(self, ctx: RunContext, w: Path, common: list, env, n: int) -> tuple[Path | None, list[str]]:
         """Superficie da OpenMVS: ReconstructMesh e, se possibile, RefineMesh.

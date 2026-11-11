@@ -27,6 +27,7 @@ import trimesh
 Progress = Callable[[str], None]
 DEFAULT_SIZE_MM = 100.0
 TARGET_FACES = 300_000
+MAX_INPUT_FACES = 1_500_000  # oltre, la pulizia su 8 GB rischia di esaurire la memoria
 MAX_POISSON_POINTS = 80_000
 
 
@@ -105,6 +106,12 @@ def surface_to_printable(mesh: trimesh.Trimesh, progress: Progress | None = None
                          y_up: bool = False, find_plane: bool = True) -> tuple[trimesh.Trimesh, CleanupInfo]:
     """Mesh di superficie (OpenMVS o AI) -> solido chiuso, Z-up, 100 mm, con report di fedeltà."""
     info = CleanupInfo()
+    if len(mesh.faces) > MAX_INPUT_FACES:
+        # una scena intera (oggetto + tavolo + sfondo) da foto del telefono può avere milioni di
+        # triangoli: riduco SUBITO, prima dei passi che occupano memoria in proporzione
+        n0 = len(mesh.faces)
+        mesh = _decimate(mesh, MAX_INPUT_FACES)
+        info.log(f"Superficie ridotta da {n0:,} a {len(mesh.faces):,} triangoli per stare nella memoria", progress)
     mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, process=True)
     if y_up:  # glTF è Y-up: ruoto per avere Z-up come gli slicer
         mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
