@@ -258,3 +258,34 @@ def test_hf_provider_multiview_with_fake_client(tmp_path):
     assert "image" not in kw
     assert steps[0].startswith("Viste usate:") and "fronte 001.jpg" in steps[0]
     assert mesh.is_watertight
+
+
+def write_images_bin(model_dir: Path, count: int):
+    import struct
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "images.bin").write_bytes(struct.pack("<Q", count) + b"\0" * 64)
+
+
+def test_registered_images_read_from_colmap_model(tmp_path):
+    from app.providers.photogrammetry import registered_images
+    write_images_bin(tmp_path / "0", 27)
+    assert registered_images(tmp_path / "0") == 27
+    assert registered_images(tmp_path / "manca") == 0
+
+
+@pytest.mark.parametrize("registered, total, ok", [(40, 40, True), (20, 40, True), (19, 40, False), (3, 30, False), (8, 12, True)])
+def test_too_few_registered_photos_stops_with_clear_message(registered, total, ok):
+    from app.providers.photogrammetry import check_registration
+    if ok:
+        check_registration(registered, total)
+    else:
+        with pytest.raises(ProviderError, match=f"{registered} foto su {total}"):
+            check_registration(registered, total)
+
+
+def test_unreliable_model_is_flagged_in_report():
+    from app.mesh.report import printability
+    m = trimesh.creation.icosphere(2, radius=50)
+    m.metadata["fidelity"] = {"filledPct": 0.0, "baseAdded": False, "deviationMm": 13.4, "method": "x"}
+    check = next(c for c in printability(m)["checks"] if c["id"] == "fidelity")
+    assert not check["ok"] and "non è affidabile" in check["hint"]

@@ -83,6 +83,30 @@ def colmap_gpu_and_thread_options(major: int, feature_threads: int, match_thread
     return feat, [f"--{fm}.use_gpu", "0", f"--{fm}.num_threads", str(match_threads)]
 
 
+def registered_images(model_dir: Path) -> int:
+    """Foto "agganciate" da COLMAP in un modello sparso: i primi 8 byte di images.bin (uint64)."""
+    import struct
+
+    try:
+        with open(model_dir / "images.bin", "rb") as f:
+            return int(struct.unpack("<Q", f.read(8))[0])
+    except (OSError, struct.error):
+        return 0
+
+
+MAX_DEVIATION_MM = 4.0  # oltre (su 100 mm) il modello non rappresenta più la scansione
+
+
+def check_registration(registered: int, total: int) -> None:
+    """Con meno di metà delle foto agganciate il modello è un frammento: meglio fermarsi e dire perché
+    (il dinosauro liscio del benchmark: 3 foto su 30, e un "modello" di 3.000 triangoli senza senso)."""
+    if registered < max(8, -(-total // 2)):
+        raise ProviderError(
+            f"Solo {registered} foto su {total} sono state collegate tra loro: l'oggetto ha troppo pochi dettagli "
+            "riconoscibili (superficie liscia, lucida o in tinta unita). Opacizzalo con talco, appoggialo su un "
+            "giornale e rifai le foto con luce diffusa.")
+
+
 class PhotogrammetryProvider(Provider):
     id = "photo"
     label = "Precisa (foto)"
@@ -140,7 +164,8 @@ class PhotogrammetryProvider(Provider):
         if not models:
             raise ProviderError("Le foto non si sovrappongono abbastanza: scattane di più girando lentamente "
                                 "attorno all'oggetto, con buona luce.")
-        model = max(models, key=lambda p: (p / "images.bin").stat().st_size if (p / "images.bin").exists() else 0)
+        model = max(models, key=registered_images)
+        check_registration(registered_images(model), n)
         ctx.run([colmap, "image_undistorter", "--image_path", images, "--input_path", model,
                  "--output_path", dense, "--output_type", "COLMAP", "--max_image_size", str(self.max_image)],
                 band=(30, 32), step="Preparazione delle immagini", expected_s=4)
@@ -167,7 +192,11 @@ class PhotogrammetryProvider(Provider):
                 mesh, info = points_to_mesh(str(ply), progress=lambda m: ctx.progress(92, m))
         except ValueError as e:
             raise ProviderError(str(e)) from e
-        return mesh, [*notes, *info.steps]
+        if info.deviation_mm is not None and info.deviation_mm > MAX_DEVIATION_MM:
+            raise ProviderError(
+                f"La ricostruzione è incompleta (il modello si scosta di {info.deviation_mm:.0f} mm dalla scansione): "
+                "servono più foto ben sovrapposte, con più dettagli visibili sull'oggetto e sul piano d'appoggio.")
+        return mesh, [f"Foto collegate: {registered_images(model)} su {n}", *notes, *info.steps]
 
     def mesh_from_dense(self, ctx: RunContext, w: Path, common: list, env, n: int) -> tuple[Path | None, list[str]]:
         """Superficie da OpenMVS: ReconstructMesh e, se possibile, RefineMesh.

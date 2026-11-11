@@ -103,6 +103,7 @@ def run(name: str, variant: str, n: int) -> dict:
     def report(pct: float, step: str):
         if not phases or phases[-1][0] != step:
             phases.append((step, time.monotonic()))
+            print(f"   [{(time.monotonic() - t0) / 60:5.1f} min] {step}", flush=True)
 
     ctx = RunContext(work_dir=work, report_progress=report, is_cancelled=lambda: False, log_file=work / "pipeline.log")
     mem = PeakMemory(os.getpid())
