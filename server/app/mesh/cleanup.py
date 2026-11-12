@@ -31,6 +31,11 @@ MAX_INPUT_FACES = 1_500_000  # oltre, la pulizia su 8 GB rischia di esaurire la 
 MAX_POISSON_POINTS = 80_000
 
 
+class UserError(ValueError):
+    """Problema delle foto o dell'oggetto, con un messaggio scritto per l'utente.
+    Tutti gli altri errori (anche i ValueError delle librerie) sono guasti interni."""
+
+
 @dataclass
 class CleanupInfo:
     steps: list[str] = field(default_factory=list)
@@ -111,13 +116,13 @@ def surface_to_printable(mesh: trimesh.Trimesh, progress: Progress | None = None
         # una scena intera da foto del telefono, o un modello AI ad alta risoluzione, può avere
         # milioni di triangoli: riduco SUBITO, prima dei passi che occupano memoria in proporzione
         n0 = len(mesh.faces)
-        mesh = _decimate(mesh, limit)
+        mesh = _decimate(mesh, limit, progress)
         info.log(f"Superficie ridotta da {n0:,} a {len(mesh.faces):,} triangoli per stare nella memoria", progress)
     mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, process=True)
     if y_up:  # glTF è Y-up: ruoto per avere Z-up come gli slicer
         mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
     if len(mesh.faces) < 4:
-        raise ValueError("Superficie ricostruita troppo povera: servono foto più nitide e più sovrapposte.")
+        raise UserError("Superficie ricostruita troppo povera: servono foto più nitide e più sovrapposte.")
     info.log(f"Superficie ricevuta: {len(mesh.faces):,} triangoli", progress)
     diag = float(np.linalg.norm(mesh.extents))
 
@@ -134,10 +139,10 @@ def surface_to_printable(mesh: trimesh.Trimesh, progress: Progress | None = None
 
     mesh = largest_component(mesh)
     if len(mesh.faces) < 4:
-        raise ValueError("Non riesco a isolare l'oggetto dallo sfondo. Prova con uno sfondo più uniforme.")
+        raise UserError("Non riesco a isolare l'oggetto dallo sfondo. Prova con uno sfondo più uniforme.")
     info.log(f"Oggetto isolato: {len(mesh.faces):,} triangoli", progress)
     if len(mesh.faces) > TARGET_FACES:
-        mesh = _decimate(mesh, TARGET_FACES)
+        mesh = _decimate(mesh, TARGET_FACES, progress)
     surface = mesh.copy()  # la superficie "vera", per misurare quanto il modello finale se ne scosta
 
     if info.plane_found and cap_bottom(mesh):
@@ -277,7 +282,7 @@ def points_to_mesh(ply_path: str, progress: Progress | None = None, depth: int =
     info = CleanupInfo()
     pcd = o3d.io.read_point_cloud(str(ply_path))
     if len(pcd.points) < 1000:
-        raise ValueError("Nuvola di punti troppo povera: servono foto più nitide e più sovrapposte.")
+        raise UserError("Nuvola di punti troppo povera: servono foto più nitide e più sovrapposte.")
     has_normals = pcd.has_normals()  # OpenMVS (--estimate-normals) le orienta verso le fotocamere
     diag = float(np.linalg.norm(pcd.get_max_bound() - pcd.get_min_bound()))
 
@@ -303,7 +308,7 @@ def points_to_mesh(ply_path: str, progress: Progress | None = None, depth: int =
         pcd = pcd.select_by_index(np.where(labels == main)[0])
     info.log(f"Oggetto isolato: {len(pcd.points):,} punti", progress)
     if len(pcd.points) < 500:
-        raise ValueError("Non riesco a isolare l'oggetto dallo sfondo. Prova con uno sfondo più uniforme.")
+        raise UserError("Non riesco a isolare l'oggetto dallo sfondo. Prova con uno sfondo più uniforme.")
     pcd.transform(T)
 
     # Memoria: Poisson cresce con il numero di punti; oltre ~80k non si guadagna dettaglio.
@@ -508,45 +513,112 @@ def finalize(mesh: trimesh.Trimesh, info: CleanupInfo, progress: Progress | None
     return _finish(mesh, None, info, progress)
 
 
-def _decimate(mesh: trimesh.Trimesh, faces: int) -> trimesh.Trimesh:
+def _sanitize(v: np.ndarray, f: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Toglie ciò che fa impazzire la semplificazione: vertici NaN/inf, triangoli degeneri o
+    duplicati, vertici coincidenti non uniti (cuciture UV/normali dei glTF)."""
+    m = trimesh.Trimesh(np.asarray(v, dtype=np.float64), np.asarray(f, dtype=np.int64), process=False)
+    m.update_faces(np.isfinite(m.vertices).all(axis=1)[m.faces].all(axis=1))
+    m.remove_unreferenced_vertices()  # prima di unire: i vertici NaN non devono arrivare a merge_vertices
+    m.merge_vertices(merge_tex=True, merge_norm=True)
+    m.update_faces(m.nondegenerate_faces())
+    m.update_faces(m.unique_faces())
+    m.remove_unreferenced_vertices()
+    return np.asarray(m.vertices), np.asarray(m.faces)
+
+
+def _quadric(v: np.ndarray, f: np.ndarray, target: int) -> tuple[np.ndarray, np.ndarray]:
+    """Semplificazione quadrica verso `target` triangoli. Non solleva mai: se la libreria si rifiuta
+    (es. obiettivo già raggiunto) o fallisce, restituisce l'ultima mesh valida."""
+    if len(f) <= target:
+        return v, f
+    try:
+        import fast_simplification as fs
+    except ImportError:  # ripiego: Open3D (lento sulle mesh grandi)
+        try:
+            import open3d as o3d
+
+            m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(np.asarray(v, np.float64)),
+                                          o3d.utility.Vector3iVector(np.asarray(f, np.int32)))
+            m = m.simplify_quadric_decimation(target)
+            out_v, out_f = np.asarray(m.vertices), np.asarray(m.triangles)
+            return (out_v, out_f) if len(out_f) else (v, f)
+        except Exception:  # noqa: BLE001
+            return v, f
+    for _ in range(3):
+        if len(f) <= target:
+            break
+        n = len(f)
+        try:
+            nv, nf = fs.simplify(np.asarray(v, np.float32), np.asarray(f, np.int32), target_count=target)
+        except Exception:  # noqa: BLE001 - es. "target_count must be less than the number of faces"
+            break
+        if len(nf) == 0:
+            break
+        v, f = nv, nf
+        if len(f) <= target * 1.1 or len(f) >= n * 0.98:  # arrivato, oppure non scende più
+            break
+    return v, f
+
+
+def _cluster(v: np.ndarray, f: np.ndarray, target: int) -> tuple[np.ndarray, np.ndarray] | None:
+    """Vertex clustering su griglia: meno fine della quadrica, ma riduce sempre. La cella si ricava
+    dalle DIMENSIONI dell'oggetto (l'area di una mesh rovinata può essere 0 o enorme) e si
+    rimpicciolisce finché il risultato non scende troppo sotto l'obiettivo."""
+    import open3d as o3d
+
+    ext = float(np.max(np.ptp(v, axis=0))) if len(v) else 0.0
+    if not np.isfinite(ext) or ext <= 0:
+        return None
+    # una superficie chiusa su una griglia N×N×N ha ~ 2·6·N²/… triangoli: N ≈ sqrt(target/4) è un buon inizio
+    cell = ext / max(16.0, np.sqrt(target / 4.0))
+    src = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(np.asarray(v, np.float64)),
+                                    o3d.utility.Vector3iVector(np.asarray(f, np.int32)))
+    best = None
+    for _ in range(6):
+        if not np.isfinite(cell) or cell <= 0:
+            break
+        m = src.simplify_vertex_clustering(cell)
+        cv, cf = np.asarray(m.vertices), np.asarray(m.triangles)
+        if len(cf) >= target * 0.5:
+            best = (cv, cf)
+            if len(cf) <= target * 1.5:
+                break
+            cell *= 1.4  # ancora troppi: cella più grande
+        else:
+            if best is not None:
+                break
+            cell /= 2  # troppo pochi: cella più piccola
+    return best
+
+
+def _decimate(mesh: trimesh.Trimesh, faces: int, progress: Progress | None = None) -> trimesh.Trimesh:
     """Semplificazione quadrica: toglie triangoli dove la superficie è piatta, li tiene sui dettagli.
 
     Su alcune mesh (visto con i modelli AI: 3,7 M -> si ferma a ~2 M, qualunque obiettivo) la
-    semplificazione si blocca a metà. Allora: unisco i vertici coincidenti e riprovo; se ancora non
-    basta, raggruppo i vertici su una griglia (vertex clustering: meno fine, ma riduce sempre)."""
-    target = int(faces)
-    v, f = np.asarray(mesh.vertices, dtype=np.float32), np.asarray(mesh.faces, dtype=np.int32)
-
-    def quadric(v, f):
+    semplificazione si blocca a metà. Allora: ripulisco la mesh e riprovo; se ancora non basta,
+    raggruppo i vertici su una griglia (vertex clustering) e rifinisco con la quadrica.
+    Non solleva mai: nel caso peggiore restituisce la mesh meno ridotta, ma valida."""
+    target = max(4, int(faces))
+    v0, f0 = np.asarray(mesh.vertices), np.asarray(mesh.faces)
+    v, f = _quadric(v0, f0, target)
+    if len(f) > target * 1.5:
         try:
-            import fast_simplification as fs
-        except ImportError:  # ripiego: Open3D (lento sulle mesh grandi)
-            import open3d as o3d
-
-            m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(v), o3d.utility.Vector3iVector(f))
-            m = m.simplify_quadric_decimation(target)
-            return np.asarray(m.vertices, dtype=np.float32), np.asarray(m.triangles, dtype=np.int32)
-        for _ in range(3):
-            n = len(f)
-            v, f = fs.simplify(v, f, target_count=target)
-            if len(f) <= target * 1.1 or len(f) >= n * 0.98:  # arrivato, oppure non scende più
-                break
-        return v, f
-
-    v, f = quadric(v, f)
+            v, f = _quadric(*_sanitize(v, f), target)
+        except Exception:  # noqa: BLE001
+            pass
     if len(f) > target * 1.5:
-        m = trimesh.Trimesh(v, f, process=False)
-        m.merge_vertices(merge_tex=True, merge_norm=True)  # vertici uguali ma separati (cuciture UV/normali)
-        v, f = quadric(np.asarray(m.vertices, dtype=np.float32), np.asarray(m.faces, dtype=np.int32))
-    if len(f) > target * 1.5:
-        import open3d as o3d
-
-        m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(v.astype(np.float64)), o3d.utility.Vector3iVector(f))
-        area = float(m.get_surface_area())
-        voxel = np.sqrt(2.0 * area / target) * 0.7  # cella ~ lato medio dei triangoli all'obiettivo
-        m = m.simplify_vertex_clustering(voxel)
-        v, f = quadric(np.asarray(m.vertices, dtype=np.float32), np.asarray(m.triangles, dtype=np.int32))
-    return trimesh.Trimesh(v, f, process=True)
+        try:
+            got = _cluster(v, f, target)
+        except Exception:  # noqa: BLE001
+            got = None
+        if got is not None:
+            v, f = _quadric(*got, target)
+        elif progress:
+            progress(f"Riduzione parziale: {len(f):,} triangoli (obiettivo {target:,})")
+    out = trimesh.Trimesh(v, f, process=True)
+    if len(out.faces) < 4:  # qualcosa è andato storto: meglio la mesh originale che niente
+        return trimesh.Trimesh(v0, f0, process=True)
+    return out
 
 
 def _to_manifold(mesh: trimesh.Trimesh):

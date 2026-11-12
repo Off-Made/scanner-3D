@@ -17,6 +17,19 @@ export const getProviders = () => api<ProviderInfo[]>('/api/providers')
 export const getJob = (id: string) => api<JobInfo>(`/api/jobs/${id}`)
 export const deleteJob = (id: string) => api<{ ok: boolean }>(`/api/jobs/${id}`, { method: 'DELETE' })
 
+/** Scarica il log di diagnosi di un job (comandi lanciati, output dei programmi, errore). */
+export async function downloadJobLog(id: string): Promise<void> {
+  const blob = await apiBlob(`/api/jobs/${id}/log`)
+  const url = URL.createObjectURL(new Blob([blob], { type: 'text/plain' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `scan3d-${id}.log`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 30_000)
+}
+
 async function uploadWithRetry(jobId: string, blob: Blob, i: number, view?: PhotoView) {
   for (let attempt = 1; ; attempt++) {
     const fd = new FormData()

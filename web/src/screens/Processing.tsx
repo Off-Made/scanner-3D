@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, CheckCircle2, Trash2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, FileText, Trash2 } from 'lucide-react'
 import { db } from '../db/scans'
-import { deleteJob, syncScan } from '../api/jobs'
+import { deleteJob, downloadJobLog, syncScan } from '../api/jobs'
 import { isUploading } from '../scan/submit'
 import { formatDuration, Header, ProgressBar, useLive } from '../ui/components'
 
 export function ProcessingScreen({ id, go }: { id: string; go: (h: string) => void }) {
   const scan = useLive(() => db.scans.get(id), [id])
   const [tick, setTick] = useState(0)
+  const [logError, setLogError] = useState(false)
 
   // polling dello stato sul server ogni 2,5 s (riprende anche se riapri l'app più tardi)
   useEffect(() => {
@@ -45,6 +46,12 @@ export function ProcessingScreen({ id, go }: { id: string; go: (h: string) => vo
           <AlertCircle size={36} strokeWidth={1.4} />
           <strong>Elaborazione non riuscita</strong>
           <p style={{ margin: 0 }}>{scan.error}</p>
+          {scan.jobId && (
+            <button className="btn" onClick={() => downloadJobLog(scan.jobId!).catch(() => setLogError(true))}>
+              <FileText size={18} strokeWidth={1.6} /> Scarica il log
+            </button>
+          )}
+          {logError && <span className="muted">Log non disponibile (la scansione non è più sul server).</span>}
           <div className="row">
             <button className="btn btn-primary" onClick={() => go('/scan')}>Nuova scansione</button>
             <button className="btn" onClick={remove}><Trash2 size={18} strokeWidth={1.6} /> Elimina</button>

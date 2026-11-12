@@ -332,3 +332,54 @@ def test_ai_mesh_is_reduced_and_cleaned_outside_the_server(tmp_path, monkeypatch
     mesh, steps = HuggingFaceProvider(client_factory=lambda *a: Dense(tmp_path)).reconstruct([p], c)
     assert any("ridotta" in s for s in steps) and mesh.is_watertight
     assert "Pulizia del modello" in (tmp_path / "pipeline.log").read_text(encoding="utf-8")  # processo separato
+
+
+def test_cleanup_is_retried_with_fewer_faces_after_a_crash(tmp_path, monkeypatch):
+    """-9/-15 (memoria) o guasto interno: un secondo giro con meno triangoli invece di fermarsi."""
+    import json
+    from app.providers import base
+    src, out = tmp_path / "in.ply", tmp_path / "clean.ply"
+    trimesh.creation.icosphere(3).export(src)
+    c = ctx(tmp_path)
+    calls = []
+
+    def fake_run(cmd, band, step, expected_s, cwd=None, env=None):
+        calls.append([str(x) for x in cmd])
+        if len(calls) == 1:
+            raise ProviderError("Il passo “Pulizia del modello” è fallito (codice -9)")
+        trimesh.creation.icosphere(2).export(out)
+        Path(str(out) + ".json").write_text(json.dumps({"steps": ["ok"], "fidelity": {}, "deviationMm": 0.1}))
+    monkeypatch.setattr(c, "run", fake_run)
+    mesh, steps, dev = base.clean_in_subprocess(c, src, out, max_faces=400_000)
+    assert len(calls) == 2 and steps == ["ok"]
+    assert calls[1][calls[1].index("--max-faces") + 1] == "200000"
+    # anche senza limite iniziale (fotogrammetria) il secondo giro ne mette uno
+    calls.clear()
+    base.clean_in_subprocess(c, src, out)
+    assert "--max-faces" not in calls[0] and "--max-faces" in calls[1]
+
+
+def test_densify_is_retried_at_lower_resolution(monkeypatch, tmp_path):
+    from app.providers import photogrammetry as ph
+    monkeypatch.setattr(ph, "omvs", lambda tool: tmp_path / tool)
+    c = ctx(tmp_path)
+    levels = []
+
+    def fake_run(cmd, band, step, expected_s, cwd=None, env=None):
+        cmd = [str(x) for x in cmd]
+        levels.append(cmd[cmd.index("--resolution-level") + 1])
+        if len(levels) == 1:
+            raise ProviderError("DensifyPointCloud fallito (codice -9)")
+        (tmp_path / "scene_dense.ply").write_text("")
+    monkeypatch.setattr(c, "run", fake_run)
+    notes = ph.PhotogrammetryProvider().densify(c, tmp_path, [], None, 30)
+    assert levels == ["0", "1"] and any("risoluzione ridotta" in n for n in notes)
+
+
+def test_densify_gives_up_after_last_level(monkeypatch, tmp_path):
+    from app.providers import photogrammetry as ph
+    monkeypatch.setattr(ph, "omvs", lambda tool: tmp_path / tool)
+    c = ctx(tmp_path)
+    monkeypatch.setattr(c, "run", FakeRun(tmp_path, fail=("DensifyPointCloud",)))
+    with pytest.raises(ProviderError):
+        ph.PhotogrammetryProvider().densify(c, tmp_path, [], None, 30)

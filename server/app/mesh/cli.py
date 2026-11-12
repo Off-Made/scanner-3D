@@ -45,8 +45,10 @@ def main(argv: list[str] | None = None) -> int:
     def say(msg: str):
         print(msg, flush=True)
 
-    from .cleanup import points_to_mesh, surface_to_printable
+    from .cleanup import UserError, points_to_mesh, surface_to_printable
 
+    if a.max_faces:
+        say(f"Limite di triangoli: {a.max_faces:,}")
     try:
         if a.points:
             mesh, info = points_to_mesh(a.input, progress=say)
@@ -57,10 +59,16 @@ def main(argv: list[str] | None = None) -> int:
             say(f"Mesh letta: {len(loaded.faces):,} triangoli (RAM {peak_gb():.1f} GB)")
             mesh, info = surface_to_printable(loaded, progress=say, y_up=a.y_up, find_plane=not a.no_plane,
                                               max_input_faces=a.max_faces)
-    except ValueError as e:  # messaggi pensati per l'utente (es. "non riesco a isolare l'oggetto")
+    except UserError as e:  # messaggi pensati per l'utente (es. "non riesco a isolare l'oggetto")
         meta.write_text(json.dumps({"error": str(e)}, ensure_ascii=False), encoding="utf-8")
         say(f"Errore: {e}")
         return 0
+    except Exception as e:  # noqa: BLE001 - guasto interno: dettagli nel log, il server può riprovare
+        import traceback
+
+        traceback.print_exc(file=sys.stdout)
+        say(f"Errore interno ({type(e).__name__}): {e}")
+        return 1
     mesh.export(out)
     meta.write_text(json.dumps({"steps": info.steps, "fidelity": info.fidelity(), "deviationMm": info.deviation_mm},
                                ensure_ascii=False), encoding="utf-8")

@@ -17,6 +17,8 @@ from typing import Callable
 
 import trimesh
 
+CLEAN_RETRY_FACES = 200_000  # secondo tentativo della pulizia, se il primo esaurisce la memoria o fallisce
+
 
 class JobCancelled(Exception):
     pass
@@ -110,10 +112,21 @@ def clean_in_subprocess(ctx: RunContext, source: Path, out: Path, *, points: boo
     import json
 
     root = Path(__file__).resolve().parents[2]  # cartella server/
-    args = [*(["--points"] if points else []), *(["--y-up"] if y_up else []), *([] if plane else ["--no-plane"]),
-            *(["--max-faces", str(max_faces)] if max_faces else [])]
-    ctx.run([sys.executable, "-m", "app.mesh.cli", source, out, *args], band=band, step="Pulizia del modello",
-            expected_s=90, cwd=root)
+    flags = [*(["--points"] if points else []), *(["--y-up"] if y_up else []), *([] if plane else ["--no-plane"])]
+
+    def attempt(limit: int | None, step: str):
+        Path(str(out) + ".json").unlink(missing_ok=True)
+        ctx.run([sys.executable, "-m", "app.mesh.cli", source, out, *flags,
+                 *(["--max-faces", str(limit)] if limit else [])],
+                band=band, step=step, expected_s=90, cwd=root)
+
+    try:
+        attempt(max_faces, "Pulizia del modello")
+    except ProviderError:
+        # memoria esaurita (-9/-15) o guasto interno (1): un secondo giro con molti meno triangoli
+        # di solito basta. Se fallisce anche questo, l'errore (con le ultime righe del log) arriva all'utente.
+        retry = min(CLEAN_RETRY_FACES, (max_faces or CLEAN_RETRY_FACES * 2) // 2)
+        attempt(retry, "Pulizia del modello (riprovo con un modello più leggero)")
     meta = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
     if meta.get("error"):
         raise ProviderError(meta["error"])

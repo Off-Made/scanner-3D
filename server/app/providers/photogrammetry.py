@@ -1,7 +1,7 @@
 """Fotogrammetria su CPU: COLMAP (pose) + OpenMVS (punti densi, mesh, affinamento) + pulizia.
 
-  COLMAP:  feature (max 2000 px, 4 thread: con 12 la RAM esplodeva) -> matching exhaustive -> pose
-  OpenMVS: DensifyPointCloud (risoluzione piena, max 2048 px) -> ReconstructMesh (graph-cut sulla
+  COLMAP:  feature (max 2000 px, thread = CPU, al massimo 4: con 12 la RAM esplodeva) -> matching exhaustive -> pose
+  OpenMVS: DensifyPointCloud (risoluzione piena, max 2048 px; se fallisce riprova a 1/2 e 1/4) -> ReconstructMesh (graph-cut sulla
            visibilità: segue i punti veri, niente "bolle") -> RefineMesh (affina la superficie
            confrontando le foto: recupera i dettagli fini)
   Pulizia: tavolo, oggetto, base piatta, fori chiusi senza deformare (mesh/cleanup.py)
@@ -115,8 +115,10 @@ class PhotogrammetryProvider(Provider):
     max_photos = 40
 
     def __init__(self):
-        self.feature_threads = int(os.getenv("PHOTO_FEATURE_THREADS", "4"))
-        self.match_threads = int(os.getenv("PHOTO_MATCH_THREADS", "4"))
+        # non più thread delle CPU: nel Codespace (2 CPU) 4 thread raddoppiano la RAM senza andare più veloci
+        cpus = str(max(1, min(4, os.cpu_count() or 2)))
+        self.feature_threads = int(os.getenv("PHOTO_FEATURE_THREADS", cpus))
+        self.match_threads = int(os.getenv("PHOTO_MATCH_THREADS", cpus))
         self.feature_max_size = int(os.getenv("PHOTO_FEATURE_MAX_SIZE", "2000"))
         self.max_image = int(os.getenv("PHOTO_MAX_IMAGE", "2400"))
         self.res_level = int(os.getenv("PHOTO_RESOLUTION_LEVEL", "0"))
@@ -173,20 +175,40 @@ class PhotogrammetryProvider(Provider):
         common = ["--process-priority", "-1", "--max-threads", "0", "-w", w]
         ctx.run([omvs("InterfaceCOLMAP"), "-i", dense, "-o", w / "scene.mvs", "--image-folder", dense / "images", "-w", w],
                 band=(32, 33), step="Preparazione della ricostruzione densa", expected_s=2, env=omvs_env)
-        ctx.run([omvs("DensifyPointCloud"), w / "scene.mvs", "--resolution-level", str(self.res_level),
-                 "--max-resolution", str(self.max_resolution), "--min-resolution", "640", *common],
-                band=(33, 60), step="Ricostruzione dei punti 3D (la parte più lunga)", expected_s=18 * n, env=omvs_env)
         ply = w / "scene_dense.ply"
+        dense_notes = self.densify(ctx, w, common, omvs_env, n)
         if not ply.exists():
             raise ProviderError("La ricostruzione densa non ha prodotto punti. Riprova con più luce e foto più nitide.")
 
         surface, notes = self.mesh_from_dense(ctx, w, common, omvs_env, n)
+        notes = [*dense_notes, *notes]
         mesh, steps, deviation = clean_in_subprocess(ctx, surface or ply, w / "clean.ply", points=surface is None)
         if deviation is not None and deviation > MAX_DEVIATION_MM:
             raise ProviderError(
                 f"La ricostruzione è incompleta (il modello si scosta di {deviation:.0f} mm dalla scansione): "
                 "servono più foto ben sovrapposte, con più dettagli visibili sull'oggetto e sul piano d'appoggio.")
         return mesh, [f"Foto collegate: {registered_images(model)} su {n}", *notes, *steps]
+
+    def densify(self, ctx: RunContext, w: Path, common: list, env, n: int) -> list[str]:
+        """DensifyPointCloud. È il passo che più spesso esaurisce la memoria (8 GB): se fallisce
+        riprovo a risoluzione dimezzata, poi a un quarto, invece di fermare tutto."""
+        levels = list(dict.fromkeys([self.res_level, self.res_level + 1, self.res_level + 2]))[:3]
+        for i, level in enumerate(levels):
+            for stale in (w / "scene_dense.ply", w / "scene_dense.mvs"):
+                stale.unlink(missing_ok=True)
+            step = "Ricostruzione dei punti 3D (la parte più lunga)" if i == 0 else \
+                f"Ricostruzione dei punti 3D (riprovo a risoluzione ridotta, livello {level})"
+            try:
+                ctx.run([omvs("DensifyPointCloud"), w / "scene.mvs", "--resolution-level", str(level),
+                         "--max-resolution", str(self.max_resolution), "--min-resolution", "640", *common],
+                        band=(33, 60), step=step, expected_s=18 * n / (4 ** i), env=env)
+            except ProviderError:
+                if i == len(levels) - 1:
+                    raise
+                continue
+            if (w / "scene_dense.ply").exists():
+                return [] if i == 0 else [f"Punti 3D calcolati a risoluzione ridotta (livello {level}) per stare nella memoria"]
+        return []
 
     def mesh_from_dense(self, ctx: RunContext, w: Path, common: list, env, n: int) -> tuple[Path | None, list[str]]:
         """Superficie da OpenMVS: ReconstructMesh e, se possibile, RefineMesh.

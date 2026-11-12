@@ -150,3 +150,14 @@ def test_photo_view_angles_are_stored_outside_the_photo_folder(client, tmp_path)
     views = json.loads((d / "views.json").read_text())
     assert views == {"001.jpg": {"angle": 270.0, "ring": 1}}  # senza angolo o con angolo non valido: nessuna vista
     assert [p.name for p in (d / "photos").iterdir()] == ["001.jpg", "002.jpg", "003.jpg"]
+
+
+def test_failed_job_log_can_be_downloaded(client):
+    job = client.post("/api/jobs", json={"provider": "missing"}).json()
+    client.post(f"/api/jobs/{job['id']}/photos", files={"photo": ("a.jpg", jpeg(), "image/jpeg")})
+    client.post(f"/api/jobs/{job['id']}/start")
+    wait_done(client, job["id"])
+    r = client.get(f"/api/jobs/{job['id']}/log")
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
+    assert "stato error" in r.text and "error.txt" in r.text and "libusb" in r.text
+    assert client.get("/api/jobs/nonesiste/log").status_code == 404

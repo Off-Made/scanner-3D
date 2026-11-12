@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -151,6 +151,21 @@ def create_app(settings: Settings | None = None, providers: dict[str, Provider] 
         if job.status != "done" or not path.exists():
             raise HTTPException(409, "Il modello non è ancora pronto.")
         return FileResponse(path, media_type="model/gltf-binary", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/jobs/{job_id}/log")
+    def get_log(job_id: str):
+        """Diagnosi: stato del job, log di tutti i programmi lanciati ed eventuale traceback."""
+        job = _job_or_404(job_id)
+        work = jobs.job_dir(job.id) / "work"
+        parts = [f"Scan3D job {job.id} — motore {job.provider} — stato {job.status}",
+                 f"Errore: {job.error}" if job.error else "", ""]
+        for name in ("error.txt", "pipeline.log"):
+            p = work / name
+            if p.exists():
+                text = p.read_text(encoding="utf-8", errors="replace")
+                parts += [f"===== {name} =====", text[-400_000:]]  # gli ultimi ~400 kB bastano
+        return PlainTextResponse("\n".join(parts), headers={
+            "Content-Disposition": f'attachment; filename="scan3d-{job.id}.log"', "Cache-Control": "no-store"})
 
     @app.delete("/api/jobs/{job_id}")
     def delete_job(job_id: str):

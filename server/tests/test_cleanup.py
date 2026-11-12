@@ -183,3 +183,66 @@ def test_decimation_still_reduces_when_quadric_gets_stuck(monkeypatch):
     assert len(out.faces) < 8000 * 1.5 * 2  # il clustering riduce di un ordine di grandezza
     assert len(out.faces) < len(s.faces) / 4
     assert out.extents == pytest.approx(s.extents, rel=0.05)  # la forma resta quella
+
+
+def _stuck_simplify_that_rejects_low_targets(v, f, target_count):
+    """Come fast_simplification vero: rifiuta un obiettivo >= triangoli; e qui non riduce mai ("bloccata")."""
+    if target_count >= len(f):
+        raise ValueError("`target_count` must be less than the number of faces %d" % len(f))
+    return v, f
+
+
+def test_decimation_never_raises_when_clustering_goes_below_target(monkeypatch):
+    """Errore visto dagli utenti: "`target_count` must be less than the number of faces 226"."""
+    import fast_simplification as fs
+    from app.mesh.cleanup import _decimate
+    monkeypatch.setattr(fs, "simplify", _stuck_simplify_that_rejects_low_targets)
+    s = trimesh.creation.icosphere(6, radius=50)
+    for target in (8000, 30000, 60000):  # anche obiettivi vicini alla dimensione originale
+        out = _decimate(s, target)
+        assert len(out.faces) >= 4
+        assert out.extents == pytest.approx(s.extents, rel=0.05)
+    assert len(_decimate(s, 8000).faces) < len(s.faces) / 4  # e riduce davvero
+
+
+def test_decimation_survives_degenerate_and_nan_geometry(monkeypatch):
+    """Errore visto dagli utenti: "SimplifyVertexClustering ... voxel_size <= 0.0"."""
+    import fast_simplification as fs
+    from app.mesh.cleanup import _decimate
+    monkeypatch.setattr(fs, "simplify", _stuck_simplify_that_rejects_low_targets)
+    s = trimesh.creation.icosphere(5, radius=10)
+    v = np.vstack([s.vertices, [[np.nan, 0, 0]], np.zeros((3, 3))])
+    n = len(s.vertices)
+    f = np.vstack([s.faces, [[n, 0, 1]], [[n + 1, n + 2, n + 3]], s.faces[:50]])  # NaN, degenere, duplicati
+    out = _decimate(trimesh.Trimesh(v, f, process=False), 1000)
+    assert len(out.faces) >= 4 and np.isfinite(out.vertices).all()
+    # mesh tutta degenere (area 0): nessuna eccezione, si restituisce quello che c'è
+    flat = trimesh.Trimesh(np.zeros((30, 3)), np.arange(30).reshape(10, 3), process=False)
+    _decimate(flat, 4)
+
+
+def test_decimation_reaches_target_with_real_library():
+    from app.mesh.cleanup import _decimate
+    s = trimesh.creation.icosphere(6, radius=50)
+    out = _decimate(s, 5000)
+    assert len(out.faces) <= 5000 * 1.1
+    assert _decimate(out, 10 ** 6).faces.shape == out.faces.shape  # obiettivo già raggiunto: non tocca nulla
+
+
+def test_cli_internal_error_exits_1_user_error_writes_json(tmp_path, monkeypatch):
+    from app.mesh import cleanup as C
+    from app.mesh import cli
+    src = tmp_path / "m.ply"
+    trimesh.creation.icosphere(3).export(src)
+
+    def boom(*a, **k):
+        raise ValueError("errore interno di una libreria")
+    monkeypatch.setattr(C, "surface_to_printable", boom)
+    assert cli.main([str(src), str(tmp_path / "o.ply")]) == 1
+    assert not (tmp_path / "o.ply.json").exists()
+
+    def user(*a, **k):
+        raise C.UserError("Non riesco a isolare l'oggetto")
+    monkeypatch.setattr(C, "surface_to_printable", user)
+    assert cli.main([str(src), str(tmp_path / "o.ply")]) == 0
+    assert "isolare" in (tmp_path / "o.ply.json").read_text(encoding="utf-8")
